@@ -11,22 +11,22 @@ import { Reveal } from "@/components/ui/reveal";
 const services = [
   {
     title: "ابحث عن باحث",
-    href: "#",
+    href: "/ar/researchers",
     icon: Search,
   },
   {
     title: "اطلب استشارة بحثية",
-    href: "#",
+    href: "/ar/consultation",
     icon: MessageSquareText,
   },
   {
     title: "انضم كباحث متطوع",
-    href: "#",
+    href: "/ar/volunteer",
     icon: UserPlus,
   },
   {
     title: "التسجيل كمستفيد جديد",
-    href: "#",
+    href: "/ar/register",
     icon: UserRound,
   },
 ];
