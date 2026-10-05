@@ -1,6 +1,7 @@
 "use client";
 
 import { Search } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 const requests = [
   {
@@ -79,6 +80,13 @@ function getStatusStyle(status: string) {
 }
 
 export function RequestsTable() {
+  const router = useRouter();
+
+  const openRequest = (id: string) => {
+    const cleanId = id.replace("#", "");
+    router.push(`/ar/profile/requests/${cleanId}`);
+  };
+
   return (
     <section
       dir="rtl"
@@ -184,10 +192,14 @@ export function RequestsTable() {
                 {requests.map((request) => (
                   <tr
                     key={request.id}
+                    onClick={() => openRequest(request.id)}
                     className="
+                      cursor-pointer
                       bg-[#F8FBFD]
                       text-[14px]
                       text-[#071B2F]
+                      transition
+                      hover:bg-[#EEF5F9]
                     "
                   >
                     <td className="rounded-r-[10px] px-4 py-4">
@@ -206,7 +218,7 @@ export function RequestsTable() {
                       {request.date}
                     </td>
 
-                    <td className="px-4 py-4 text-[#6B7280]">
+                    <td className="px-4 py-4 text-[#164A68]">
                       {request.id}
                     </td>
 
