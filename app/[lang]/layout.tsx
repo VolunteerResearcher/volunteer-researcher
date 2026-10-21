@@ -1,5 +1,4 @@
-import { Header } from "@/components/layout/header";
-import { Footer } from "@/components/layout/footer";
+import { SiteShell } from "@/components/layout/site-shell";
 
 export default async function LangLayout({
   children,
@@ -15,15 +14,9 @@ export default async function LangLayout({
     <div
       dir={isArabic ? "rtl" : "ltr"}
       lang={lang}
-      className="flex min-h-screen flex-col"
+      className="min-h-screen"
     >
-      <Header />
-
-      <main className="flex-1">
-        {children}
-      </main>
-
-      <Footer />
+      <SiteShell>{children}</SiteShell>
     </div>
   );
 }

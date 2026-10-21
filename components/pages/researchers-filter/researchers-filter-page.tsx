@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from "react";
@@ -9,7 +10,15 @@ import {
 } from "./filter-form";
 import { FilterResults } from "./filter-results";
 
-export function ResearchersFilterPage() {
+import type { PublicResearcher } from "@/components/pages/researchers/researchers-page";
+
+type ResearchersFilterPageProps = {
+  researchers: PublicResearcher[];
+};
+
+export function ResearchersFilterPage({
+  researchers,
+}: ResearchersFilterPageProps) {
   const [searchFilters, setSearchFilters] =
     useState<ResearchFilters | null>(null);
 
@@ -23,7 +32,10 @@ export function ResearchersFilterPage() {
         }}
       />
 
-      <FilterResults filters={searchFilters} />
+      <FilterResults
+        filters={searchFilters}
+        researchers={researchers}
+      />
     </>
   );
 }

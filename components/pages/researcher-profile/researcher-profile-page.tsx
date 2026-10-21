@@ -1,27 +1,46 @@
+
 import { ProfileHero } from "./profile-hero";
 import { ProfileCard } from "./profile-card";
 import { ResearcherAbout } from "./researcher-about";
 
-export function ResearcherProfilePage() {
+export type ResearcherProfileData = {
+  id: string;
+  name: string;
+  title: string;
+  location: string;
+  university: string;
+  image: string;
+  fields: string[];
+  description: string;
+  rating: number;
+  reviewsCount: number;
+  cvUrl?: string;
+};
+
+type ResearcherProfilePageProps = {
+  researcher: ResearcherProfileData;
+};
+
+export function ResearcherProfilePage({
+  researcher,
+}: ResearcherProfilePageProps) {
   return (
     <>
       <ProfileHero />
 
       <ProfileCard
-        name="د. مشاري العنزي"
-        title="أستاذ مشارك في الهندسة الكهربائية"
-        location="سكاكا - المملكة العربية السعودية"
-        university="جامعة الجوف"
-        image="/brand/researcher.png"
-        fields={[
-          "الذكاء الاصطناعي",
-          "تعلم الآلة",
-          "تحليل البيانات",
-        ]}
+        name={researcher.name}
+        title={researcher.title}
+        location={researcher.location}
+        university={researcher.university}
+        fields={researcher.fields}
+        rating={researcher.rating}
+        reviewsCount={researcher.reviewsCount}
+        
       />
 
       <ResearcherAbout
-        description="باحث متخصص في علوم الحاسب، مهتم بمجالات الذكاء الاصطناعي وتعلم الآلة وتحليل البيانات، ويسعى إلى توظيف التقنيات الحديثة في تطوير حلول مبتكرة ودعم البحث العلمي وإنتاج أبحاث ذات أثر يسهم في خدمة المجتمع."
+        description={researcher.description}
       />
     </>
   );

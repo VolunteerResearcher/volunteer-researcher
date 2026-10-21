@@ -1,63 +1,16 @@
+
 import { ResearcherCard } from "@/components/pages/researchers/researcher-card";
+import type { PublicResearcher } from "@/components/pages/researchers/researchers-page";
 import type { ResearchFilters } from "./filter-form";
 
 type FilterResultsProps = {
   filters: ResearchFilters | null;
+  researchers: PublicResearcher[];
 };
-
-const researchers = [
-  {
-    id: 1,
-    name: "د. مشاري العنزي",
-    title: "أستاذ مشارك في الهندسة الكهربائية",
-    university: "جامعة الجوف",
-    specialization: "الهندسة الكهربائية",
-    department: "كلية الهندسة",
-    image: "/brand/researcher.png",
-    fields: [
-      "الذكاء الاصطناعي",
-      "تعلم الآلة",
-      "تحليل البيانات",
-    ],
-    description:
-      "باحث في مجال الذكاء الاصطناعي وتطبيقاته في معالجة البيانات الضخمة لخدمة المجتمع.",
-  },
-  {
-    id: 2,
-    name: "د. أحمد العتيبي",
-    title: "أستاذ مساعد في علوم الحاسب",
-    university: "جامعة الجوف",
-    specialization: "علوم الحاسب",
-    department: "كلية علوم الحاسب والمعلومات",
-    image: "/brand/researcher.png",
-    fields: [
-      "الأمن السيبراني",
-      "الشبكات",
-      "تحليل البيانات",
-    ],
-    description:
-      "باحث مهتم بالأمن السيبراني وتحليل البيانات وتطوير الحلول التقنية الحديثة.",
-  },
-  {
-    id: 3,
-    name: "د. خالد الشمري",
-    title: "أستاذ مشارك في نظم المعلومات",
-    university: "جامعة الجوف",
-    specialization: "نظم المعلومات",
-    department: "كلية علوم الحاسب والمعلومات",
-    image: "/brand/researcher.png",
-    fields: [
-      "نظم المعلومات",
-      "التحول الرقمي",
-      "الذكاء الاصطناعي",
-    ],
-    description:
-      "باحث متخصص في نظم المعلومات والتحول الرقمي وتطبيقات الذكاء الاصطناعي.",
-  },
-];
 
 export function FilterResults({
   filters,
+  researchers,
 }: FilterResultsProps) {
   if (!filters) {
     return null;
@@ -74,13 +27,13 @@ export function FilterResults({
     const keywords = normalize(filters.keywords);
 
     const matchesName =
-      !name ||
-      normalize(researcher.name).includes(name);
+      !name || normalize(researcher.name).includes(name);
 
     const matchesSpecialization =
       !specialization ||
-      normalize(researcher.specialization).includes(
-        specialization
+      normalize(researcher.title).includes(specialization) ||
+      researcher.fields.some((item) =>
+        normalize(item).includes(specialization)
       );
 
     const matchesField =
@@ -89,17 +42,18 @@ export function FilterResults({
         normalize(item).includes(field)
       );
 
+    // لا توجد بيانات قسم أكاديمي مستقلة حاليًا.
+    // نبحث في جهة العمل والتخصص بدل اختراع قسم غير موجود.
     const matchesDepartment =
       !department ||
-      normalize(researcher.department).includes(department);
+      normalize(researcher.university).includes(department) ||
+      normalize(researcher.title).includes(department);
 
     const searchableText = normalize(
       [
         researcher.name,
         researcher.title,
         researcher.university,
-        researcher.specialization,
-        researcher.department,
         ...researcher.fields,
         researcher.description,
       ].join(" ")
@@ -132,24 +86,15 @@ export function FilterResults({
                 name={researcher.name}
                 title={researcher.title}
                 university={researcher.university}
-                image={researcher.image}
                 fields={researcher.fields}
                 description={researcher.description}
+                rating={researcher.rating}
+                reviewsCount={researcher.reviewsCount}
               />
             ))}
           </div>
         ) : (
-          <div
-            className="
-              rounded-[20px]
-              border
-              border-[#D9D9D9]
-              bg-white
-              px-6
-              py-12
-              text-center
-            "
-          >
+          <div className="rounded-[20px] border border-[#D9D9D9] bg-white px-6 py-12 text-center">
             <p className="text-[20px] text-[#071B2F]">
               لم يتم العثور على باحث مطابق لخيارات البحث.
             </p>

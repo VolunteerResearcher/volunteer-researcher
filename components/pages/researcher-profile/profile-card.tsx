@@ -1,9 +1,8 @@
-import Image from "next/image";
-import Link from "next/link";
+
 import {
   GraduationCap,
   MapPin,
-  CloudDownload,
+  Star,
 } from "lucide-react";
 
 type ProfileCardProps = {
@@ -11,9 +10,11 @@ type ProfileCardProps = {
   title: string;
   location: string;
   university: string;
-  image: string;
   fields: string[];
-  cvUrl?: string;
+
+  // التقييمات المعتمدة من الإدارة فقط
+  rating?: number;
+  reviewsCount?: number;
 };
 
 export function ProfileCard({
@@ -21,10 +22,17 @@ export function ProfileCard({
   title,
   location,
   university,
-  image,
   fields,
-  cvUrl = "#",
+  rating = 0,
+  reviewsCount = 0,
 }: ProfileCardProps) {
+  const safeRating =
+    typeof rating === "number" && Number.isFinite(rating)
+      ? Math.max(0, Math.min(5, rating))
+      : 0;
+
+  const hasReviews = reviewsCount > 0;
+
   return (
     <section className="bg-white px-4 py-10 md:px-8 md:py-14">
       <div className="mx-auto max-w-[1320px]">
@@ -38,184 +46,169 @@ export function ProfileCard({
             bg-white
             px-5
             py-6
-
             md:px-8
             md:py-8
           "
         >
-          <div
-            className="
-              grid
-              grid-cols-1
-              items-center
-              gap-8
+          {/* Researcher Information */}
+          <div className="flex flex-col gap-6">
+            <div className="min-w-0 text-right">
+              {/* Name */}
+              <h2
+                className="
+                  text-[26px]
+                  font-normal
+                  text-[#071B2F]
+                  sm:text-[30px]
+                  lg:text-[34px]
+                "
+              >
+                {name}
+              </h2>
 
-              lg:grid-cols-[1fr_260px]
-              lg:gap-10
-            "
-          >
-            {/* Researcher Details */}
-            <div className="flex flex-col gap-6">
+              {/* Specialization */}
+              <p
+                className="
+                  mt-2
+                  text-[16px]
+                  text-[#6B7280]
+                  sm:text-[18px]
+                "
+              >
+                {title}
+              </p>
+
+              {/* Approved Researcher Rating */}
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                {hasReviews ? (
+                  <>
+                    <div
+                      className="flex items-center gap-1"
+                      aria-label={`تقييم الباحث ${safeRating.toFixed(1)} من 5`}
+                    >
+                      {Array.from(
+                        { length: 5 },
+                        (_, index) => {
+                          const fillPercent = Math.max(
+                            0,
+                            Math.min(
+                              100,
+                              (safeRating - index) * 100
+                            )
+                          );
+
+                          return (
+                            <span
+                              key={index}
+                              className="relative inline-flex h-5 w-5"
+                            >
+                              <Star
+                                size={20}
+                                strokeWidth={1.7}
+                                className="absolute inset-0 text-[#CBD5E1]"
+                              />
+
+                              <span
+                                className="absolute inset-0 overflow-hidden"
+                                style={{
+                                  width: `${fillPercent}%`,
+                                }}
+                              >
+                                <Star
+                                  size={20}
+                                  strokeWidth={1.7}
+                                  className="fill-[#E5A000] text-[#E5A000]"
+                                />
+                              </span>
+                            </span>
+                          );
+                        }
+                      )}
+                    </div>
+
+                    <span className="text-[16px] font-semibold text-[#071B2F]">
+                      {safeRating.toFixed(1)}
+                      <span className="mr-1 text-sm font-normal text-[#94A3B8]">
+                        / 5
+                      </span>
+                    </span>
+
+                    <span className="text-[13px] text-[#6B7280]">
+                      ({reviewsCount} تقييمات معتمدة)
+                    </span>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2 text-[#94A3B8]">
+                    <Star size={19} strokeWidth={1.7} />
+                    <span className="text-sm">
+                      لا توجد تقييمات معتمدة بعد
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Location and University */}
               <div
                 className="
+                  mt-4
                   flex
-                  flex-col
+                  flex-wrap
                   items-center
-                  gap-5
-                  text-center
-
-                  sm:flex-row
-                  sm:items-center
-                  sm:text-right
+                  gap-x-4
+                  gap-y-2
+                  text-[#6B7280]
                 "
               >
-                <div
-                  className="
-                    relative
-                    h-[130px]
-                    w-[130px]
-                    shrink-0
-
-                    sm:h-[150px]
-                    sm:w-[150px]
-                  "
-                >
-                  <Image
-                    src={image}
-                    alt={name}
-                    fill
-                    className="rounded-full object-cover"
-                    sizes="150px"
+                <div className="flex items-center gap-2">
+                  <MapPin
+                    size={18}
+                    strokeWidth={1.8}
+                    className="text-[#164A68]"
                   />
+
+                  <span className="text-[15px] sm:text-[16px]">
+                    {location}
+                  </span>
                 </div>
 
-                <div className="min-w-0">
-                  <h2
-                    className="
-                      text-[26px]
-                      font-normal
-                      text-[#071B2F]
+                <div className="flex items-center gap-2">
+                  <GraduationCap
+                    size={18}
+                    strokeWidth={1.8}
+                    className="text-[#164A68]"
+                  />
 
-                      sm:text-[30px]
-                      lg:text-[34px]
-                    "
-                  >
-                    {name}
-                  </h2>
-
-                  <p
-                    className="
-                      mt-2
-                      text-[16px]
-                      text-[#6B7280]
-
-                      sm:text-[18px]
-                    "
-                  >
-                    {title}
-                  </p>
-
-                  <div
-                    className="
-                      mt-3
-                      flex
-                      flex-wrap
-                      items-center
-                      justify-center
-                      gap-x-4
-                      gap-y-2
-                      text-[#6B7280]
-
-                      sm:justify-start
-                    "
-                  >
-                    <div className="flex items-center gap-2">
-                      <MapPin
-                        size={18}
-                        strokeWidth={1.8}
-                        className="text-[#164A68]"
-                      />
-                      <span className="text-[15px] sm:text-[16px]">
-                        {location}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <GraduationCap
-                        size={18}
-                        strokeWidth={1.8}
-                        className="text-[#164A68]"
-                      />
-                      <span className="text-[15px] sm:text-[16px]">
-                        {university}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="mt-5">
-                    <p className="mb-3 text-[17px] text-[#071B2F]">
-                      المجالات البحثية :
-                    </p>
-
-                    <div className="flex flex-wrap justify-center gap-3 sm:justify-start">
-                      {fields.map((field) => (
-                        <span
-                          key={field}
-                          className="
-                            rounded-full
-                            bg-[#D9D9D9]
-                            px-4
-                            py-1
-                            text-[13px]
-                            text-[#071B2F]
-
-                            sm:text-[14px]
-                          "
-                        >
-                          {field}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                  <span className="text-[15px] sm:text-[16px]">
+                    {university}
+                  </span>
                 </div>
               </div>
-            </div>
 
-            {/* CV Button */}
-            <div className="flex items-center justify-center lg:justify-start">
-              <Link
-                href={cvUrl}
-                className="
-                  flex
-                  min-h-[48px]
-                  w-full
-                  max-w-[240px]
-                  items-center
-                  justify-center
-                  gap-3
-                  whitespace-nowrap
-                  rounded-[7px]
+              {/* Research Fields */}
+              <div className="mt-5">
+                <p className="mb-3 text-[17px] text-[#071B2F]">
+                  المجالات البحثية :
+                </p>
 
-                  bg-gradient-to-b
-                  from-[#071B2F]
-                  to-[#164A68]
-
-                  px-5
-                  text-[15px]
-                  font-normal
-                  text-white
-
-                  transition
-                  hover:opacity-90
-                "
-              >
-                <CloudDownload
-                  size={22}
-                  strokeWidth={1.7}
-                />
-
-                تحميل السيرة الذاتية
-              </Link>
+                <div className="flex flex-wrap gap-3">
+                  {fields.map((field) => (
+                    <span
+                      key={field}
+                      className="
+                        rounded-full
+                        bg-[#D9D9D9]
+                        px-4
+                        py-1
+                        text-[13px]
+                        text-[#071B2F]
+                        sm:text-[14px]
+                      "
+                    >
+                      {field}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </article>

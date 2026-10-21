@@ -1,7 +1,9 @@
+
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import {
   ArrowRight,
   CalendarDays,
@@ -9,6 +11,7 @@ import {
   FileText,
   GraduationCap,
   Hash,
+  Loader2,
   MessageSquareText,
   UserRound,
   XCircle,
@@ -29,53 +32,24 @@ type RequestData = {
   organization: string;
   message: string;
   adminNote: string;
+  additionalNotes: string;
+  attachmentPath: string | null;
 };
 
-const requests: Record<string, RequestData> = {
-  "REQ-1015": {
-    id: "REQ-1015",
-    title: "مراجعة مقترح بحثي",
-    type: "استشارة بحثية",
-    field: "البحث العلمي",
-    date: "2026/08/20",
-    status: "طلب جديد",
-    beneficiary: "سارة محمد",
-    organization: "جامعة الجوف",
-    message:
-      "أرغب في مراجعة المقترح البحثي والتأكد من وضوح مشكلة البحث والأهداف والمنهجية قبل البدء في تنفيذ الدراسة.",
-    adminNote:
-      "تمت مراجعة الطلب من قبل الإدارة، ونرى أن مجال الطلب يتوافق مع تخصصك وخبرتك البحثية.",
-  },
+const helpTypeLabels: Record<string, string> = {
+  research: "استشارة بحثية",
+  methodology: "منهجية البحث",
+  analysis: "تحليل البيانات",
+  review: "مراجعة بحثية",
+  other: "أخرى",
+};
 
-  "REQ-1007": {
-    id: "REQ-1007",
-    title: "مراجعة منهجية دراسة",
-    type: "توجيه بحثي",
-    field: "مناهج البحث",
-    date: "2026/08/15",
-    status: "قيد التنفيذ",
-    beneficiary: "نورة خالد",
-    organization: "جامعة الملك سعود",
-    message:
-      "أحتاج إلى مراجعة المنهجية المستخدمة في الدراسة والتأكد من ملاءمتها لمشكلة البحث وأهدافه.",
-    adminNote:
-      "تم اعتماد الطلب وقبوله، وهو حاليًا قيد التنفيذ.",
-  },
-
-  "REQ-0998": {
-    id: "REQ-0998",
-    title: "مراجعة أسئلة البحث",
-    type: "مراجعة بحثية",
-    field: "البحث العلمي",
-    date: "2026/08/02",
-    status: "مكتمل",
-    beneficiary: "ريم أحمد",
-    organization: "جامعة تبوك",
-    message:
-      "أحتاج إلى مراجعة أسئلة البحث والتأكد من ارتباطها بأهداف الدراسة.",
-    adminNote:
-      "تم الانتهاء من هذا الطلب وإغلاقه بنجاح.",
-  },
+const statusLabels: Record<string, string> = {
+  pending: "قيد المراجعة",
+  assigned: "طلب جديد",
+  in_progress: "قيد التنفيذ",
+  completed: "مكتمل",
+  rejected: "مرفوض",
 };
 
 function getStatusStyle(status: string) {
@@ -89,7 +63,7 @@ function getStatusStyle(status: string) {
     case "مكتمل":
       return "bg-[#E8F7EE] text-[#2E7D4F]";
 
-    case "معتذر عنه":
+    case "مرفوض":
       return "bg-[#FFE8EC] text-[#B4233A]";
 
     default:
@@ -100,21 +74,230 @@ function getStatusStyle(status: string) {
 export function ResearcherRequestDetails({
   requestId,
 }: ResearcherRequestDetailsProps) {
-  const originalRequest = requests[requestId];
+  const [requestData, setRequestData] =
+    useState<RequestData | null>(null);
 
-  const [status, setStatus] = useState(
-    originalRequest?.status ?? ""
-  );
+  const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const [showRejectForm, setShowRejectForm] =
     useState(false);
 
   const [rejectReason, setRejectReason] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
+  const [actionError, setActionError] = useState("");
 
-  const [actionMessage, setActionMessage] =
-    useState("");
+  useEffect(() => {
+    let cancelled = false;
 
-  if (!originalRequest) {
+    async function loadRequest() {
+      setLoading(true);
+      setPageError("");
+      setRequestData(null);
+
+      try {
+        const supabase = createClient();
+
+        const { data: authData, error: authError } =
+          await supabase.auth.getUser();
+
+        if (authError || !authData.user) {
+          throw new Error(
+            "يجب تسجيل الدخول بحساب الباحث أولًا."
+          );
+        }
+
+        const { data, error } = await supabase
+          .from("consultation_requests")
+          .select(
+            "id, title, description, help_type, additional_notes, attachment_path, status, created_at, beneficiary_id, assigned_researcher_id"
+          )
+          .eq("id", requestId)
+          .eq(
+            "assigned_researcher_id",
+            authData.user.id
+          )
+          .maybeSingle();
+
+        if (error) {
+          throw new Error(
+            "تعذر تحميل بيانات الطلب: " + error.message
+          );
+        }
+
+        if (!data) {
+          throw new Error(
+            "الطلب غير موجود أو غير مسند إلى حسابك."
+          );
+        }
+
+        let beneficiaryName = "غير متاح";
+
+        const { data: beneficiaryProfile } =
+          await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", data.beneficiary_id)
+            .maybeSingle();
+
+        if (beneficiaryProfile?.full_name) {
+          beneficiaryName = beneficiaryProfile.full_name;
+        }
+
+        const formattedDate = new Intl.DateTimeFormat(
+          "en-CA",
+          {
+            timeZone: "Asia/Riyadh",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }
+        )
+          .format(new Date(data.created_at))
+          .replaceAll("-", "/");
+
+        if (!cancelled) {
+          setRequestData({
+            id: data.id,
+            title: data.title,
+            type:
+              helpTypeLabels[data.help_type] ??
+              data.help_type,
+            field: "غير محدد في الطلب",
+            date: formattedDate,
+            status:
+              statusLabels[data.status] ??
+              "غير محدد",
+            beneficiary: beneficiaryName,
+            organization: "غير محددة",
+            message: data.description,
+            adminNote:
+              "تمت إحالة هذا الطلب إليك من قبل الإدارة. يرجى مراجعة التفاصيل واختيار الإجراء المناسب.",
+            additionalNotes:
+              data.additional_notes ?? "",
+            attachmentPath:
+              data.attachment_path ?? null,
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPageError(
+            error instanceof Error
+              ? error.message
+              : "حدث خطأ أثناء تحميل الطلب."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadRequest();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [requestId]);
+
+  async function respondToRequest(
+    action: "accept" | "decline"
+  ) {
+    if (saving || !requestData) return;
+
+    setActionError("");
+    setActionMessage("");
+
+    const reason = rejectReason.trim();
+
+    if (
+      action === "decline" &&
+      (reason.length < 5 || reason.length > 1000)
+    ) {
+      setActionError(
+        "سبب الاعتذار يجب أن يكون بين 5 و1000 حرف."
+      );
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const response = await fetch(
+        `/api/researcher/requests/${encodeURIComponent(
+          requestId
+        )}/respond`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action,
+            ...(action === "decline"
+              ? { reason }
+              : {}),
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.error ??
+            "تعذر حفظ الرد على الطلب."
+        );
+      }
+
+      if (action === "accept") {
+        setRequestData((current) =>
+          current
+            ? {
+                ...current,
+                status: "قيد التنفيذ",
+              }
+            : current
+        );
+
+        setActionMessage(
+          "تم قبول الطلب بنجاح وحفظ حالته في قاعدة البيانات."
+        );
+      } else {
+        setActionMessage(
+          "تم حفظ سبب الاعتذار وإعادة الطلب إلى الإدارة لإعادة إسناده."
+        );
+      }
+
+      setShowRejectForm(false);
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "حدث خطأ أثناء حفظ الرد."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <main
+        dir="rtl"
+        className="flex min-h-screen items-center justify-center bg-[#F8FBFD] px-5"
+      >
+        <div className="flex items-center gap-3 text-[#164A68]">
+          <Loader2 className="animate-spin" size={24} />
+          <span>جارٍ تحميل تفاصيل الطلب...</span>
+        </div>
+      </main>
+    );
+  }
+
+  if (pageError || !requestData) {
     return (
       <main
         dir="rtl"
@@ -131,11 +314,11 @@ export function ResearcherRequestDetails({
 
           <div className="mt-8 rounded-[24px] border border-[#D7E3EF] bg-white p-10 text-center">
             <h1 className="text-2xl font-semibold text-[#071B2F]">
-              الطلب غير موجود
+              تعذر عرض الطلب
             </h1>
 
             <p className="mt-3 text-sm text-[#64748B]">
-              لم نتمكن من العثور على تفاصيل هذا الطلب.
+              {pageError || "الطلب غير موجود."}
             </p>
           </div>
         </div>
@@ -146,57 +329,37 @@ export function ResearcherRequestDetails({
   const details = [
     {
       label: "رقم الطلب",
-      value: originalRequest.id,
+      value: requestData.id,
       icon: Hash,
     },
     {
       label: "نوع المساعدة",
-      value: originalRequest.type,
+      value: requestData.type,
       icon: FileText,
     },
     {
       label: "مجال البحث",
-      value: originalRequest.field,
+      value: requestData.field,
       icon: GraduationCap,
     },
     {
       label: "تاريخ الطلب",
-      value: originalRequest.date,
+      value: requestData.date,
       icon: CalendarDays,
     },
     {
       label: "اسم المستفيد",
-      value: originalRequest.beneficiary,
+      value: requestData.beneficiary,
       icon: UserRound,
     },
     {
       label: "الجهة",
-      value: originalRequest.organization,
+      value: requestData.organization,
       icon: GraduationCap,
     },
   ];
 
-  const handleAccept = () => {
-    setStatus("قيد التنفيذ");
-
-    setActionMessage(
-      "تم قبول الطلب بنجاح، وأصبح بإمكانك التواصل مع المستفيد من خلال المنصة."
-    );
-
-    setShowRejectForm(false);
-  };
-
-  const handleReject = () => {
-    if (!rejectReason.trim()) return;
-
-    setStatus("معتذر عنه");
-
-    setActionMessage(
-      "تم إرسال اعتذارك عن الطلب إلى الإدارة مع توضيح السبب."
-    );
-
-    setShowRejectForm(false);
-  };
+  const status = requestData.status;
 
   return (
     <main
@@ -204,7 +367,6 @@ export function ResearcherRequestDetails({
       className="min-h-screen bg-[#F8FBFD] px-5 py-12 sm:px-8 lg:px-16"
     >
       <div className="mx-auto max-w-[1100px]">
-
         {/* العودة */}
         <Link
           href="/ar/researcher-dashboard"
@@ -216,14 +378,13 @@ export function ResearcherRequestDetails({
 
         {/* العنوان */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
           <div>
             <p className="mb-2 text-sm text-[#64748B]">
               تفاصيل الطلب المحول إليك
             </p>
 
             <h1 className="text-2xl font-semibold text-[#071B2F] sm:text-3xl">
-              {originalRequest.title}
+              {requestData.title}
             </h1>
           </div>
 
@@ -234,12 +395,10 @@ export function ResearcherRequestDetails({
           >
             {status}
           </span>
-
         </div>
 
         {/* معلومات الطلب */}
         <div className="rounded-[24px] border border-[#9DB5D8] bg-white p-5 sm:p-7">
-
           <div className="grid gap-4 md:grid-cols-2">
             {details.map((item) => {
               const Icon = item.icon;
@@ -250,7 +409,10 @@ export function ResearcherRequestDetails({
                   className="flex min-h-[90px] items-center gap-4 rounded-2xl border border-[#D7E3EF] bg-[#F8FBFD] px-5 py-4"
                 >
                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-[#164A68]">
-                    <Icon size={21} strokeWidth={1.7} />
+                    <Icon
+                      size={21}
+                      strokeWidth={1.7}
+                    />
                   </div>
 
                   <div>
@@ -258,7 +420,7 @@ export function ResearcherRequestDetails({
                       {item.label}
                     </p>
 
-                    <p className="text-[15px] font-medium text-[#071B2F]">
+                    <p className="break-words text-[15px] font-medium text-[#071B2F]">
                       {item.value}
                     </p>
                   </div>
@@ -280,11 +442,42 @@ export function ResearcherRequestDetails({
               </h2>
             </div>
 
-            <p className="text-sm leading-8 text-[#475569]">
-              {originalRequest.message}
+            <p className="whitespace-pre-wrap text-sm leading-8 text-[#475569]">
+              {requestData.message}
             </p>
           </div>
 
+          {/* ملاحظات المستفيد */}
+          {requestData.additionalNotes && (
+            <div className="mt-5 rounded-2xl border border-[#D7E3EF] bg-[#F8FBFD] p-5 sm:p-6">
+              <h2 className="mb-3 font-semibold text-[#071B2F]">
+                ملاحظات إضافية من المستفيد
+              </h2>
+
+              <p className="whitespace-pre-wrap text-sm leading-8 text-[#475569]">
+                {requestData.additionalNotes}
+              </p>
+            </div>
+          )}
+
+          {/* المرفق */}
+          {requestData.attachmentPath && (
+            <div className="mt-5 rounded-2xl border border-[#D7E3EF] bg-[#F8FBFD] p-5 sm:p-6">
+              <div className="flex items-center gap-2 text-[#164A68]">
+                <FileText size={20} />
+
+                <h2 className="font-semibold">
+                  مرفق الطلب
+                </h2>
+              </div>
+
+              <p className="mt-2 text-sm leading-7 text-[#64748B]">
+                يوجد ملف مرفق بهذا الطلب. سيتم
+                تفعيل عرضه بعد ربط صلاحيات الوصول
+                الآمن للمرفقات.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* ملاحظة الإدارة */}
@@ -294,63 +487,58 @@ export function ResearcherRequestDetails({
           </h2>
 
           <p className="text-sm leading-7 text-[#64748B]">
-            {originalRequest.adminNote}
+            {requestData.adminNote}
           </p>
         </div>
 
         {/* قبول أو اعتذار */}
-        {status === "طلب جديد" && (
+        {status === "طلب جديد" && !actionMessage && (
           <div className="mt-5 rounded-[24px] border border-[#9DB5D8] bg-white p-6 sm:p-7">
-
             <h2 className="text-lg font-semibold text-[#071B2F]">
               الرد على الطلب
             </h2>
 
             <p className="mt-2 text-sm leading-7 text-[#64748B]">
-              راجع تفاصيل الطلب، ثم اختر قبول الطلب أو الاعتذار عنه.
+              راجع تفاصيل الطلب، ثم اختر قبول
+              الطلب أو الاعتذار عنه.
             </p>
 
             {!showRejectForm ? (
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-
                 <button
                   type="button"
-                  onClick={handleAccept}
-                  className="
-                    inline-flex items-center justify-center gap-2
-                    rounded-full bg-[#164A68]
-                    px-7 py-3
-                    text-sm font-medium text-white
-                    transition
-                    hover:bg-[#123E58]
-                  "
+                  disabled={saving}
+                  onClick={() =>
+                    void respondToRequest("accept")
+                  }
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[#164A68] px-7 py-3 text-sm font-medium text-white transition hover:bg-[#123E58] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <CheckCircle2 size={18} />
+                  {saving ? (
+                    <Loader2
+                      size={18}
+                      className="animate-spin"
+                    />
+                  ) : (
+                    <CheckCircle2 size={18} />
+                  )}
+
                   قبول الطلب
                 </button>
 
                 <button
                   type="button"
+                  disabled={saving}
                   onClick={() =>
                     setShowRejectForm(true)
                   }
-                  className="
-                    inline-flex items-center justify-center gap-2
-                    rounded-full border border-[#B4233A]
-                    px-7 py-3
-                    text-sm font-medium text-[#B4233A]
-                    transition
-                    hover:bg-[#FFF1F3]
-                  "
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-[#B4233A] px-7 py-3 text-sm font-medium text-[#B4233A] transition hover:bg-[#FFF1F3] disabled:opacity-50"
                 >
                   <XCircle size={18} />
                   الاعتذار عن الطلب
                 </button>
-
               </div>
             ) : (
               <div className="mt-6">
-
                 <label
                   htmlFor="reject-reason"
                   className="mb-2 block text-sm font-medium text-[#071B2F]"
@@ -361,66 +549,70 @@ export function ResearcherRequestDetails({
                 <textarea
                   id="reject-reason"
                   value={rejectReason}
-                  onChange={(e) =>
-                    setRejectReason(e.target.value)
+                  onChange={(event) =>
+                    setRejectReason(event.target.value)
                   }
                   rows={4}
+                  maxLength={1000}
+                  disabled={saving}
                   placeholder="اكتب سبب الاعتذار عن الطلب..."
-                  className="
-                    w-full resize-none rounded-2xl
-                    border border-[#D7E3EF]
-                    bg-[#F8FBFD]
-                    px-4 py-4
-                    text-sm text-[#071B2F]
-                    outline-none
-                    placeholder:text-[#94A3B8]
-                    focus:border-[#164A68]
-                  "
+                  className="w-full resize-none rounded-2xl border border-[#D7E3EF] bg-[#F8FBFD] px-4 py-4 text-sm text-[#071B2F] outline-none placeholder:text-[#94A3B8] focus:border-[#164A68]"
                 />
 
                 <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row">
-
                   <button
                     type="button"
+                    disabled={saving}
                     onClick={() => {
                       setShowRejectForm(false);
                       setRejectReason("");
+                      setActionError("");
                     }}
-                    className="rounded-full border border-[#D7E3EF] px-6 py-3 text-sm text-[#475569] transition hover:bg-[#F8FBFD]"
+                    className="rounded-full border border-[#D7E3EF] px-6 py-3 text-sm text-[#475569] transition hover:bg-[#F8FBFD] disabled:opacity-50"
                   >
                     إلغاء
                   </button>
 
                   <button
                     type="button"
-                    onClick={handleReject}
-                    disabled={!rejectReason.trim()}
-                    className="
-                      rounded-full bg-[#B4233A]
-                      px-6 py-3
-                      text-sm font-medium text-white
-                      transition
-                      hover:opacity-90
-                      disabled:cursor-not-allowed
-                      disabled:opacity-40
-                    "
+                    disabled={
+                      saving ||
+                      rejectReason.trim().length < 5
+                    }
+                    onClick={() =>
+                      void respondToRequest("decline")
+                    }
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#B4233A] px-6 py-3 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >
+                    {saving && (
+                      <Loader2
+                        size={17}
+                        className="animate-spin"
+                      />
+                    )}
+
                     تأكيد الاعتذار
                   </button>
-
                 </div>
               </div>
             )}
+          </div>
+        )}
 
+        {/* رسالة الخطأ */}
+        {actionError && (
+          <div
+            role="alert"
+            className="mt-5 rounded-[20px] border border-[#F5C2C7] bg-[#FFF1F3] p-5 text-sm text-[#B4233A]"
+          >
+            {actionError}
           </div>
         )}
 
         {/* نتيجة الإجراء */}
         {actionMessage && (
           <div className="mt-5 rounded-[20px] border border-[#D7E3EF] bg-white p-6">
-
             <div className="flex items-start gap-3">
-
               {status === "قيد التنفيذ" ? (
                 <CheckCircle2
                   size={23}
@@ -444,56 +636,58 @@ export function ResearcherRequestDetails({
                   {actionMessage}
                 </p>
 
-                {status === "معتذر عنه" &&
+                {status !== "قيد التنفيذ" &&
                   rejectReason && (
                     <div className="mt-4 rounded-2xl bg-[#F8FBFD] p-4">
                       <p className="mb-1 text-xs text-[#64748B]">
                         سبب الاعتذار
                       </p>
 
-                      <p className="text-sm leading-7 text-[#071B2F]">
+                      <p className="whitespace-pre-wrap text-sm leading-7 text-[#071B2F]">
                         {rejectReason}
                       </p>
                     </div>
                   )}
 
+                {status !== "قيد التنفيذ" && (
+                  <Link
+                    href="/ar/researcher-dashboard"
+                    className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-[#164A68]"
+                  >
+                    <ArrowRight size={17} />
+                    العودة إلى طلباتي
+                  </Link>
+                )}
               </div>
             </div>
-
           </div>
         )}
 
         {/* التواصل بعد القبول */}
         {status === "قيد التنفيذ" && (
           <div className="mt-5 rounded-[20px] border border-[#9DB5D8] bg-white p-6">
-
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
               <div>
                 <h3 className="font-semibold text-[#071B2F]">
                   التواصل مع المستفيد
                 </h3>
 
                 <p className="mt-1 text-sm leading-7 text-[#64748B]">
-                  الطلب مقبول ويمكنك الآن التواصل مع المستفيد من خلال المنصة.
+                  الطلب مقبول. يمكنك الانتقال إلى
+                  صفحة المحادثة عند تفعيل خدمة
+                  المراسلة داخل المنصة.
                 </p>
               </div>
 
               <Link
-                href={`/ar/researcher-dashboard/requests/${requestId}/conversation`}
-                className="
-                  inline-flex shrink-0 items-center justify-center gap-2
-                  rounded-full bg-[#164A68]
-                  px-6 py-3
-                  text-sm font-medium text-white
-                  transition
-                  hover:bg-[#123E58]
-                "
+                href={`/ar/researcher-dashboard/requests/${encodeURIComponent(
+                  requestId
+                )}/conversation`}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-[#164A68] px-6 py-3 text-sm font-medium text-white transition hover:bg-[#123E58]"
               >
                 <MessageSquareText size={18} />
                 التواصل مع المستفيد
               </Link>
-
             </div>
           </div>
         )}
@@ -501,39 +695,31 @@ export function ResearcherRequestDetails({
         {/* المحادثة السابقة للطلب المكتمل */}
         {status === "مكتمل" && (
           <div className="mt-5 rounded-[20px] border border-[#9DB5D8] bg-white p-6">
-
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
               <div>
                 <h3 className="font-semibold text-[#071B2F]">
                   المحادثة السابقة
                 </h3>
 
                 <p className="mt-1 text-sm leading-7 text-[#64748B]">
-                  تم إغلاق هذا الطلب بعد اكتماله، ويمكنك الاطلاع على سجل
-                  المحادثة السابقة مع المستفيد.
+                  الطلب مكتمل. يمكنك الاطلاع على
+                  المحادثة السابقة إذا كانت خدمة
+                  المراسلة مفعّلة.
                 </p>
               </div>
 
               <Link
-                href={`/ar/researcher-dashboard/requests/${requestId}/conversation`}
-                className="
-                  inline-flex shrink-0 items-center justify-center gap-2
-                  rounded-full border border-[#164A68]
-                  px-6 py-3
-                  text-sm font-medium text-[#164A68]
-                  transition
-                  hover:bg-[#F1F6F9]
-                "
+                href={`/ar/researcher-dashboard/requests/${encodeURIComponent(
+                  requestId
+                )}/conversation`}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-[#164A68] px-6 py-3 text-sm font-medium text-[#164A68] transition hover:bg-[#F1F6F9]"
               >
                 <MessageSquareText size={18} />
                 عرض المحادثة السابقة
               </Link>
-
             </div>
           </div>
         )}
-
       </div>
     </main>
   );

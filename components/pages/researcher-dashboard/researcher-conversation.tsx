@@ -1,7 +1,8 @@
+
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   FileText,
@@ -10,140 +11,226 @@ import {
   Paperclip,
   Send,
   UserRound,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 type ResearcherConversationProps = {
   requestId: string;
 };
 
-type Message = {
-  id: number;
-  sender: "beneficiary" | "researcher";
-  text: string;
-  time: string;
-};
-
-type RequestConversationData = {
+type Consultation = {
+  id: string;
   title: string;
-  beneficiary: string;
-  field: string;
+  help_type: string;
+  beneficiary_id: string;
+  assigned_researcher_id: string | null;
   status: string;
-  messages: Message[];
 };
 
-const requestData: Record<string, RequestConversationData> = {
-  "REQ-1015": {
-    title: "مراجعة مقترح بحثي",
-    beneficiary: "سارة محمد",
-    field: "البحث العلمي",
-    status: "قيد التنفيذ",
-    messages: [
-      {
-        id: 1,
-        sender: "researcher",
-        text: "مرحبًا، تم قبول طلبك ويسعدني مساعدتك في مراجعة المقترح البحثي.",
-        time: "10:30 ص",
-      },
-      {
-        id: 2,
-        sender: "beneficiary",
-        text: "شكرًا لك. أحتاج إلى التأكد من صياغة مشكلة البحث والمنهجية قبل البدء.",
-        time: "10:35 ص",
-      },
-      {
-        id: 3,
-        sender: "researcher",
-        text: "بالتأكيد، يمكنك إرسال التفاصيل المتعلقة بالمقترح وسأراجعها معك.",
-        time: "10:40 ص",
-      },
-    ],
-  },
-
-  "REQ-1007": {
-    title: "مراجعة منهجية دراسة",
-    beneficiary: "نورة خالد",
-    field: "مناهج البحث",
-    status: "قيد التنفيذ",
-    messages: [
-      {
-        id: 1,
-        sender: "researcher",
-        text: "مرحبًا، اطلعت على تفاصيل طلبك المتعلق بمنهجية الدراسة.",
-        time: "09:15 ص",
-      },
-      {
-        id: 2,
-        sender: "beneficiary",
-        text: "شكرًا لك. أريد التأكد من أن المنهج المستخدم مناسب لأهداف البحث.",
-        time: "09:20 ص",
-      },
-      {
-        id: 3,
-        sender: "researcher",
-        text: "بالتأكيد، أرسل لي تفاصيل المنهج والأهداف وسأراجع مدى توافقها.",
-        time: "09:28 ص",
-      },
-    ],
-  },
-
-  "REQ-0998": {
-    title: "مراجعة أسئلة البحث",
-    beneficiary: "ريم أحمد",
-    field: "البحث العلمي",
-    status: "مكتمل",
-    messages: [
-      {
-        id: 1,
-        sender: "beneficiary",
-        text: "مرحبًا، أحتاج إلى مراجعة أسئلة البحث والتأكد من ارتباطها بأهداف الدراسة.",
-        time: "11:10 ص",
-      },
-      {
-        id: 2,
-        sender: "researcher",
-        text: "مرحبًا ريم، بالتأكيد. أرسلي أسئلة البحث مع أهداف الدراسة وسأراجعها معك.",
-        time: "11:18 ص",
-      },
-      {
-        id: 3,
-        sender: "beneficiary",
-        text: "تم إرسالها، وأحتاج بشكل خاص إلى التأكد من وضوح السؤال الثالث.",
-        time: "11:25 ص",
-      },
-      {
-        id: 4,
-        sender: "researcher",
-        text: "راجعت الأسئلة، وهي مرتبطة بالأهداف بشكل جيد. أقترح فقط إعادة صياغة السؤال الثالث ليكون أكثر تحديدًا ووضوحًا.",
-        time: "11:40 ص",
-      },
-      {
-        id: 5,
-        sender: "beneficiary",
-        text: "شكرًا لك، تم تعديل السؤال حسب الملاحظة.",
-        time: "11:48 ص",
-      },
-      {
-        id: 6,
-        sender: "researcher",
-        text: "ممتاز، الصياغة الآن أوضح ومتوافقة مع هدف الدراسة. بالتوفيق في بحثك.",
-        time: "11:55 ص",
-      },
-    ],
-  },
+type ChatMessage = {
+  id: string;
+  consultation_id: string;
+  sender_id: string;
+  body: string;
+  created_at: string;
 };
+
+const helpTypeLabels: Record<string, string> = {
+  research: "البحث العلمي",
+  methodology: "مناهج البحث",
+  analysis: "تحليل البيانات",
+  review: "مراجعة بحثية",
+  other: "أخرى",
+};
+
+const statusLabels: Record<string, string> = {
+  pending: "قيد المراجعة",
+  assigned: "بانتظار قبول الباحث",
+  in_progress: "قيد التنفيذ",
+  completed: "مكتمل",
+  rejected: "مرفوض",
+};
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat("ar-SA", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
 
 export function ResearcherConversation({
   requestId,
 }: ResearcherConversationProps) {
-  const request = requestData[requestId];
+  const [supabase] = useState(() => createClient());
 
+  const [userId, setUserId] = useState<string | null>(null);
+  const [request, setRequest] = useState<Consultation | null>(null);
+  const [beneficiaryName, setBeneficiaryName] = useState("المستفيد");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [message, setMessage] = useState("");
 
-  const [messages, setMessages] = useState<Message[]>(
-    request?.messages ?? []
-  );
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [sendError, setSendError] = useState("");
 
-  if (!request) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const loadMessages = useCallback(async () => {
+    const { data, error: messagesError } = await supabase
+      .from("consultation_messages")
+      .select("id, consultation_id, sender_id, body, created_at")
+      .eq("consultation_id", requestId)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true });
+
+    if (messagesError) {
+      setSendError("تعذر تحديث الرسائل. حاولي مرة أخرى.");
+      return;
+    }
+
+    setMessages((data ?? []) as ChatMessage[]);
+  }, [supabase, requestId]);
+
+  const loadRequest = useCallback(async () => {
+    const { data: authData, error: authError } =
+      await supabase.auth.getUser();
+
+    if (authError || !authData.user) {
+      setError("يجب تسجيل الدخول بحساب الباحث لعرض المحادثة.");
+      setLoading(false);
+      return;
+    }
+
+    const currentUserId = authData.user.id;
+    setUserId(currentUserId);
+
+    const { data: requestData, error: requestError } = await supabase
+      .from("consultation_requests")
+      .select(
+        "id, title, help_type, beneficiary_id, assigned_researcher_id, status"
+      )
+      .eq("id", requestId)
+      .eq("assigned_researcher_id", currentUserId)
+      .single();
+
+    if (requestError || !requestData) {
+      setError("هذه المحادثة غير متاحة لحسابك.");
+      setLoading(false);
+      return;
+    }
+
+    if (
+      requestData.status !== "in_progress" &&
+      requestData.status !== "completed"
+    ) {
+      setError("المحادثة تصبح متاحة بعد قبول الطلب.");
+      setLoading(false);
+      return;
+    }
+
+    setRequest(requestData as Consultation);
+
+    const { data: beneficiaryData } = await supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", requestData.beneficiary_id)
+      .maybeSingle();
+
+    if (beneficiaryData?.full_name) {
+      setBeneficiaryName(beneficiaryData.full_name);
+    }
+
+    await loadMessages();
+    setLoading(false);
+  }, [supabase, requestId, loadMessages]);
+
+  useEffect(() => {
+    void loadRequest();
+  }, [loadRequest]);
+
+  useEffect(() => {
+    if (!request) return;
+
+    const interval = window.setInterval(async () => {
+      const { data } = await supabase
+        .from("consultation_requests")
+        .select("status")
+        .eq("id", requestId)
+        .eq("assigned_researcher_id", userId)
+        .maybeSingle();
+
+      if (data?.status) {
+        setRequest((current) =>
+          current ? { ...current, status: data.status } : current
+        );
+      }
+
+      await loadMessages();
+    }, 3000);
+
+    return () => window.clearInterval(interval);
+  }, [requestId, request?.id, supabase, userId, loadMessages]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
+  }, [messages.length]);
+
+  const isCompleted = request?.status === "completed";
+  const canSend = request?.status === "in_progress";
+
+  const handleSend = async () => {
+    const text = message.trim();
+
+    if (!text || !canSend || !userId || sending) return;
+
+    if (text.length > 5000) {
+      setSendError("الرسالة يجب ألا تتجاوز 5000 حرف.");
+      return;
+    }
+
+    setSending(true);
+    setSendError("");
+
+    const { error: insertError } = await supabase
+      .from("consultation_messages")
+      .insert({
+        consultation_id: requestId,
+        sender_id: userId,
+        body: text,
+      });
+
+    if (insertError) {
+      setSendError("تعذر إرسال الرسالة. تأكدي أن الطلب لا يزال قيد التنفيذ.");
+      setSending(false);
+      return;
+    }
+
+    setMessage("");
+    await loadMessages();
+    setSending(false);
+  };
+
+  if (loading) {
+    return (
+      <main
+        dir="rtl"
+        className="flex min-h-screen items-center justify-center bg-[#F8FBFD]"
+      >
+        <div className="flex items-center gap-3 text-[#164A68]">
+          <Loader2 size={22} className="animate-spin" />
+          <span>جاري تحميل المحادثة...</span>
+        </div>
+      </main>
+    );
+  }
+
+  if (error || !request) {
     return (
       <main
         dir="rtl"
@@ -159,12 +246,15 @@ export function ResearcherConversation({
           </Link>
 
           <div className="mt-8 rounded-[24px] border border-[#D7E3EF] bg-white p-10 text-center">
+            <AlertCircle
+              size={34}
+              className="mx-auto mb-4 text-[#164A68]"
+            />
             <h1 className="text-2xl font-semibold text-[#071B2F]">
               المحادثة غير متاحة
             </h1>
-
             <p className="mt-3 text-sm text-[#64748B]">
-              لا توجد محادثة متاحة لهذا الطلب.
+              {error || "لا توجد محادثة متاحة لهذا الطلب."}
             </p>
           </div>
         </div>
@@ -172,33 +262,12 @@ export function ResearcherConversation({
     );
   }
 
-  const isCompleted = request.status === "مكتمل";
-
-  const handleSend = () => {
-    if (!message.trim() || isCompleted) return;
-
-    const newMessage: Message = {
-      id: Date.now(),
-      sender: "researcher",
-      text: message.trim(),
-      time: "الآن",
-    };
-
-    setMessages((currentMessages) => [
-      ...currentMessages,
-      newMessage,
-    ]);
-
-    setMessage("");
-  };
-
   return (
     <main
       dir="rtl"
       className="min-h-screen bg-[#F8FBFD] px-4 py-10 sm:px-8 lg:px-16"
     >
       <div className="mx-auto max-w-[1100px]">
-
         {/* العودة */}
         <Link
           href={`/ar/researcher-dashboard/requests/${requestId}`}
@@ -211,13 +280,9 @@ export function ResearcherConversation({
         {/* بيانات المستفيد */}
         <div className="mb-5 rounded-[24px] border border-[#D7E3EF] bg-white p-5 sm:p-6">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-
             <div className="flex items-center gap-4">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#EAF2F8] text-[#164A68]">
-                <UserRound
-                  size={26}
-                  strokeWidth={1.6}
-                />
+                <UserRound size={26} strokeWidth={1.6} />
               </div>
 
               <div>
@@ -226,7 +291,7 @@ export function ResearcherConversation({
                 </p>
 
                 <h1 className="text-lg font-semibold text-[#071B2F]">
-                  {request.beneficiary}
+                  {beneficiaryName}
                 </h1>
 
                 <p className="mt-1 text-sm text-[#64748B]">
@@ -242,15 +307,13 @@ export function ResearcherConversation({
                   : "bg-[#EAF2F8] text-[#164A68]"
               }`}
             >
-              {request.status}
+              {statusLabels[request.status] ?? request.status}
             </span>
-
           </div>
         </div>
 
         {/* بيانات الطلب */}
         <div className="mb-5 flex items-start gap-3 rounded-[20px] border border-[#D7E3EF] bg-white p-5">
-
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#F1F6F9] text-[#164A68]">
             <FileText size={19} />
           </div>
@@ -265,16 +328,14 @@ export function ResearcherConversation({
             </p>
 
             <p className="mt-1 text-xs text-[#64748B]">
-              {request.field}
+              {helpTypeLabels[request.help_type] ?? request.help_type}
             </p>
           </div>
-
         </div>
 
         {/* تنبيه إغلاق المحادثة */}
         {isCompleted && (
           <div className="mb-5 flex items-start gap-3 rounded-[20px] border border-[#D7E3EF] bg-white p-5">
-
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#E8F7EE] text-[#2E7D4F]">
               <Lock size={18} />
             </div>
@@ -286,19 +347,16 @@ export function ResearcherConversation({
 
               <p className="mt-1 text-sm leading-7 text-[#64748B]">
                 تم إغلاق هذه المحادثة بعد اكتمال الطلب. يمكنك الاطلاع على
-                الرسائل السابقة، ولكن لا يمكن إرسال رسائل أو مرفقات جديدة.
+                الرسائل السابقة، ولكن لا يمكن إرسال رسائل جديدة.
               </p>
             </div>
-
           </div>
         )}
 
         {/* صندوق المحادثة */}
         <div className="overflow-hidden rounded-[24px] border border-[#9DB5D8] bg-white">
-
           {/* رأس المحادثة */}
           <div className="flex items-center gap-3 border-b border-[#D7E3EF] px-5 py-4 sm:px-6">
-
             <MessageSquareText
               size={21}
               className="text-[#164A68]"
@@ -317,15 +375,27 @@ export function ResearcherConversation({
                   : "جميع الرسائل تتم من خلال منصة باحث متطوع"}
               </p>
             </div>
-
           </div>
 
           {/* الرسائل */}
-          <div className="min-h-[420px] space-y-5 bg-[#F8FBFD] p-5 sm:p-7">
+          <div className="max-h-[550px] min-h-[420px] space-y-5 overflow-y-auto bg-[#F8FBFD] p-5 sm:p-7">
+            {messages.length === 0 && (
+              <div className="flex min-h-[350px] flex-col items-center justify-center text-center">
+                <MessageSquareText
+                  size={38}
+                  className="mb-4 text-[#9DB5D8]"
+                />
+                <p className="font-medium text-[#071B2F]">
+                  لا توجد رسائل بعد
+                </p>
+                <p className="mt-2 text-sm text-[#64748B]">
+                  ابدأ المحادثة بإرسال أول رسالة للمستفيد.
+                </p>
+              </div>
+            )}
 
             {messages.map((item) => {
-              const isResearcher =
-                item.sender === "researcher";
+              const isResearcher = item.sender_id === userId;
 
               return (
                 <div
@@ -337,27 +407,18 @@ export function ResearcherConversation({
                   }`}
                 >
                   <div
-                    className={`
-                      min-w-[180px]
-                      max-w-[85%]
-                      rounded-2xl
-                      px-4 py-3
-                      sm:max-w-[70%]
-                      ${
-                        isResearcher
-                          ? "rounded-tr-sm bg-[#164A68] text-white"
-                          : "rounded-tl-sm border border-[#D7E3EF] bg-white text-[#071B2F]"
-                      }
-                    `}
+                    className={`min-w-[180px] max-w-[85%] rounded-2xl px-4 py-3 sm:max-w-[70%] ${
+                      isResearcher
+                        ? "rounded-tr-sm bg-[#164A68] text-white"
+                        : "rounded-tl-sm border border-[#D7E3EF] bg-white text-[#071B2F]"
+                    }`}
                   >
                     <p className="mb-1 text-[11px] font-medium opacity-70">
-                      {isResearcher
-                        ? "أنت"
-                        : request.beneficiary}
+                      {isResearcher ? "أنت" : beneficiaryName}
                     </p>
 
-                    <p className="text-sm leading-7">
-                      {item.text}
+                    <p className="whitespace-pre-wrap break-words text-sm leading-7">
+                      {item.body}
                     </p>
 
                     <p
@@ -367,79 +428,78 @@ export function ResearcherConversation({
                           : "text-[#94A3B8]"
                       }`}
                     >
-                      {item.time}
+                      {formatTime(item.created_at)}
                     </p>
                   </div>
                 </div>
               );
             })}
 
+            <div ref={bottomRef} />
           </div>
 
-          {/* الكتابة - تظهر فقط إذا الطلب غير مكتمل */}
-          {!isCompleted && (
+          {/* الكتابة */}
+          {canSend && (
             <div className="border-t border-[#D7E3EF] bg-white p-4 sm:p-5">
-
               <div className="flex items-end gap-3">
-
-                {/* مرفق */}
+                {/* المرفقات: تُفعّل في خطوة لاحقة */}
                 <button
                   type="button"
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#D7E3EF] text-[#164A68] transition hover:bg-[#F8FBFD]"
-                  aria-label="إرفاق ملف"
+                  disabled
+                  title="إرفاق الملفات سيكون متاحًا لاحقًا"
+                  className="flex h-11 w-11 shrink-0 cursor-not-allowed items-center justify-center rounded-full border border-[#D7E3EF] text-[#94A3B8]"
+                  aria-label="إرفاق ملف - غير متاح حاليًا"
                 >
                   <Paperclip size={19} />
                 </button>
 
-                {/* الرسالة */}
                 <textarea
                   value={message}
-                  onChange={(e) =>
-                    setMessage(e.target.value)
-                  }
+                  onChange={(e) => setMessage(e.target.value)}
                   placeholder="اكتب رسالتك للمستفيد..."
                   rows={1}
-                  className="
-                    min-h-[46px]
-                    flex-1 resize-none
-                    rounded-2xl
-                    border border-[#D7E3EF]
-                    bg-[#F8FBFD]
-                    px-4 py-3
-                    text-sm text-[#071B2F]
-                    outline-none
-                    placeholder:text-[#94A3B8]
-                    focus:border-[#164A68]
-                  "
+                  maxLength={5000}
+                  className="min-h-[46px] flex-1 resize-none rounded-2xl border border-[#D7E3EF] bg-[#F8FBFD] px-4 py-3 text-sm text-[#071B2F] outline-none placeholder:text-[#94A3B8] focus:border-[#164A68]"
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === "Enter" &&
+                      !e.shiftKey &&
+                      !e.nativeEvent.isComposing
+                    ) {
+                      e.preventDefault();
+                      void handleSend();
+                    }
+                  }}
                 />
 
-                {/* إرسال */}
                 <button
                   type="button"
-                  onClick={handleSend}
-                  disabled={!message.trim()}
-                  className="
-                    flex h-11 w-11 shrink-0
-                    items-center justify-center
-                    rounded-full
-                    bg-[#164A68]
-                    text-white
-                    transition
-                    hover:bg-[#123E58]
-                    disabled:cursor-not-allowed
-                    disabled:opacity-40
-                  "
+                  onClick={() => void handleSend()}
+                  disabled={!message.trim() || sending}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#164A68] text-white transition hover:bg-[#123E58] disabled:cursor-not-allowed disabled:opacity-40"
                   aria-label="إرسال الرسالة"
                 >
-                  <Send size={18} />
+                  {sending ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    <Send size={18} />
+                  )}
                 </button>
-
               </div>
 
-              <p className="mt-3 text-center text-[11px] text-[#94A3B8]">
-                حفاظًا على الخصوصية، لا تظهر بيانات التواصل الشخصية للمستفيد أو الباحث.
-              </p>
+              {sendError && (
+                <p
+                  role="alert"
+                  className="mt-3 text-center text-xs text-red-600"
+                >
+                  {sendError}
+                </p>
+              )}
 
+              <p className="mt-3 text-center text-[11px] text-[#94A3B8]">
+                حفاظًا على الخصوصية، لا تظهر بيانات التواصل الشخصية
+                للمستفيد أو الباحث.
+              </p>
             </div>
           )}
 
@@ -452,9 +512,7 @@ export function ResearcherConversation({
               </div>
             </div>
           )}
-
         </div>
-
       </div>
     </main>
   );
