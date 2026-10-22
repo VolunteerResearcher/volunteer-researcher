@@ -9,7 +9,6 @@ import {
   MessagesSquare,
   GraduationCap,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 
 type StatisticsData = {
   researchers: number;
@@ -80,126 +79,42 @@ export function Statistics() {
   const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
+    const controller = new AbortController();
 
     async function fetchStatistics() {
       try {
-        const supabase = createClient();
-
-        // جلب الباحثين المعتمدين فقط
-        const {
-          data: approvedResearchers,
-          error: researchersError,
-        } = await supabase
-          .from("profiles")
-          .select("id")
-          .eq("role", "researcher")
-          .eq("approval_status", "approved");
-
-        if (researchersError) {
-          throw researchersError;
-        }
-
-        const researcherIds = (
-          approvedResearchers ?? []
-        ).map((researcher) => researcher.id);
-
-        let researchFieldsCount = 0;
-        let specializationsCount = 0;
-
-        // جلب مجالات وتخصصات الباحثين المعتمدين
-        if (researcherIds.length > 0) {
-          const {
-            data: applications,
-            error: applicationsError,
-          } = await supabase
-            .from("researcher_applications")
-            .select(
-              "research_field, general_specialization"
-            )
-            .in("id", researcherIds);
-
-          if (applicationsError) {
-            throw applicationsError;
+        const response = await fetch(
+          "/api/public/statistics",
+          {
+            cache: "no-store",
+            signal: controller.signal,
           }
+        );
 
-          const uniqueResearchFields = new Set(
-            (applications ?? [])
-              .map((item) =>
-                item.research_field?.trim()
-              )
-              .filter(Boolean)
+        if (!response.ok) {
+          throw new Error(
+            `Statistics request failed: ${response.status}`
           );
-
-          const uniqueSpecializations = new Set(
-            (applications ?? [])
-              .map((item) =>
-                item.general_specialization?.trim()
-              )
-              .filter(Boolean)
-          );
-
-          researchFieldsCount =
-            uniqueResearchFields.size;
-
-          specializationsCount =
-            uniqueSpecializations.size;
         }
 
-        // إجمالي طلبات الاستشارات
-        const {
-          count: requestsCount,
-          error: requestsError,
-        } = await supabase
-          .from("consultation_requests")
-          .select("*", {
-            count: "exact",
-            head: true,
-          });
+        const data: StatisticsData =
+          await response.json();
 
-        if (requestsError) {
-          throw requestsError;
-        }
+        if (controller.signal.aborted) return;
 
-        // عدد الاستشارات المكتملة
-        const {
-          count: completedCount,
-          error: completedError,
-        } = await supabase
-          .from("consultation_requests")
-          .select("*", {
-            count: "exact",
-            head: true,
-          })
-          .eq("status", "completed");
-
-        if (completedError) {
-          throw completedError;
-        }
-
-        if (!isMounted) return;
-
-        setStatisticsData({
-          researchers: researcherIds.length,
-          researchFields: researchFieldsCount,
-          requests: requestsCount ?? 0,
-          completedConsultations:
-            completedCount ?? 0,
-          specializations: specializationsCount,
-        });
-
+        setStatisticsData(data);
         setLoadError(false);
       } catch (error) {
+        if (controller.signal.aborted) return;
+
         console.error(
           "Failed to load initiative statistics:",
           error
         );
 
-        if (isMounted) {
-          setLoadError(true);
-        }
+        setLoadError(true);
       } finally {
-        if (isMounted) {
+        if (!controller.signal.aborted) {
           setIsLoading(false);
         }
       }
@@ -207,9 +122,7 @@ export function Statistics() {
 
     fetchStatistics();
 
-    return () => {
-      isMounted = false;
-    };
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -224,9 +137,7 @@ export function Statistics() {
           observer.disconnect();
         }
       },
-      {
-        threshold: 0.25,
-      }
+      { threshold: 0.25 }
     );
 
     observer.observe(section);
@@ -299,6 +210,11 @@ export function Statistics() {
                   transition-all
                   duration-700
                   md:min-h-[210px]
+                  ${
+                    index === 4
+                      ? "col-span-2 mx-auto w-[calc((100%-1rem)/2)] sm:col-span-1 sm:w-full"
+                      : ""
+                  }
                   ${
                     isVisible
                       ? "translate-y-0 opacity-100"
