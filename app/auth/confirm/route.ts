@@ -10,11 +10,32 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get("type") as EmailOtpType | null;
   const code = searchParams.get("code");
 
-  const loginUrl = new URL("/ar/researcher-login", origin);
-
   const supabase = await createClient();
 
-  // دعم رابط تأكيد البريد باستخدام token_hash
+  // نحدد صفحة الدخول بناءً على نوع الحساب بعد التأكيد
+  async function getLoginUrl() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const accountType = user?.user_metadata?.account_type;
+
+    const loginPath =
+      accountType === "researcher"
+        ? "/ar/researcher-login"
+        : "/ar/login";
+
+    return new URL(loginPath, origin);
+  }
+
+  // عند تعذر التأكيد، نستخدم صفحة الدخول العامة
+  function getErrorUrl(errorType: string) {
+    const url = new URL("/ar/login", origin);
+    url.searchParams.set("error", errorType);
+    return NextResponse.redirect(url);
+  }
+
+  // التأكيد باستخدام token_hash
   if (tokenHash && type) {
     const { error } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
@@ -22,28 +43,29 @@ export async function GET(request: NextRequest) {
     });
 
     if (error) {
-      loginUrl.searchParams.set("error", "confirmation_failed");
-      return NextResponse.redirect(loginUrl);
+      return getErrorUrl("confirmation_failed");
     }
 
+    const loginUrl = await getLoginUrl();
     loginUrl.searchParams.set("confirmed", "true");
+
     return NextResponse.redirect(loginUrl);
   }
 
-  // دعم رابط التأكيد باستخدام PKCE code
+  // التأكيد باستخدام PKCE code
   if (code) {
     const { error } =
       await supabase.auth.exchangeCodeForSession(code);
 
     if (error) {
-      loginUrl.searchParams.set("error", "confirmation_failed");
-      return NextResponse.redirect(loginUrl);
+      return getErrorUrl("confirmation_failed");
     }
 
+    const loginUrl = await getLoginUrl();
     loginUrl.searchParams.set("confirmed", "true");
+
     return NextResponse.redirect(loginUrl);
   }
 
-  loginUrl.searchParams.set("error", "invalid_link");
-  return NextResponse.redirect(loginUrl);
+  return getErrorUrl("invalid_link");
 }
