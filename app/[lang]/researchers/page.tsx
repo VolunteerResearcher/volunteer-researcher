@@ -1,7 +1,7 @@
 
 import { ResearchersPage } from "@/components/pages/researchers/researchers-page";
 import type { PublicResearcher } from "@/components/pages/researchers/researchers-page";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,8 @@ function splitFields(...values: (string | null)[]) {
 }
 
 export default async function Researchers() {
-  const supabase = await createClient();
+  // يعمل على الخادم فقط، ولا تُرسل مفاتيح Supabase السرية للمتصفح
+  const supabase = createAdminClient();
 
   // جلب الباحثين المعتمدين فقط
   const { data: profiles, error: profilesError } =
@@ -46,7 +47,7 @@ export default async function Researchers() {
     return <ResearchersPage researchers={[]} />;
   }
 
-  // جلب بيانات الانضمام والتقييمات المعتمدة
+  // قراءة الحقول العامة المطلوبة فقط
   const [applicationsResult, reviewsResult] =
     await Promise.all([
       supabase
