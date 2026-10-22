@@ -128,7 +128,6 @@ export function AdminRequestDetails({
     useState("");
   const [researchers, setResearchers] = useState<Researcher[]>([]);
   const [selectedResearcher, setSelectedResearcher] = useState("");
-  const [adminNote, setAdminNote] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -951,34 +950,6 @@ export function AdminRequestDetails({
                   لإعادة الإسناد.
                 </p>
               )}
-            </div>
-
-            {/* ملاحظة الإدارة للباحث */}
-            <div className="mt-5">
-              <label
-                htmlFor="admin-note"
-                className="mb-2 block text-sm font-medium"
-              >
-                ملاحظة الإدارة للباحث (اختيارية)
-              </label>
-
-              <textarea
-                id="admin-note"
-                value={adminNote}
-                onChange={(event) =>
-                  setAdminNote(event.target.value)
-                }
-                rows={3}
-                disabled
-                placeholder="سيتم تفعيل حفظ ملاحظات الإدارة للباحث في خطوة لاحقة..."
-                className="w-full resize-none rounded-xl border border-[#D7E3EF] bg-[#F8FBFD] p-4 text-sm outline-none disabled:opacity-60"
-              />
-
-              <p className="mt-2 text-xs text-[#64748B]">
-                هذه الملاحظة خاصة بالباحث، وحفظها غير مفعّل
-                حاليًا. ملاحظات المستفيد تُكتب من زر طلب
-                معلومات إضافية أدناه.
-              </p>
             </div>
 
             {/* أزرار الإدارة */}
