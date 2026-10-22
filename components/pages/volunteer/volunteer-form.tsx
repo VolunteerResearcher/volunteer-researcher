@@ -3,7 +3,6 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import { TurnstileWidget } from "@/components/security/turnstile-widget";
 import {
   UserRound,
   Phone,
@@ -30,13 +29,7 @@ const textareaClassName =
 const iconClassName =
   "pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#164A68]";
 
-const allowedExtensions = [
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".ppt",
-  ".pptx",
-];
+const allowedExtensions = [".pdf", ".doc", ".docx", ".ppt", ".pptx"];
 
 export function VolunteerForm() {
   const [researchField, setResearchField] = useState("");
@@ -48,8 +41,6 @@ export function VolunteerForm() {
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-  const [turnstileToken, setTurnstileToken] = useState("");
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -129,13 +120,8 @@ export function VolunteerForm() {
       return;
     }
 
-    if (
-      researcherBio.length < 20 ||
-      researcherBio.length > 1000
-    ) {
-      setError(
-        "يرجى كتابة نبذة عن الباحث من 20 إلى 1000 حرف."
-      );
+    if (researcherBio.length < 20 || researcherBio.length > 1000) {
+      setError("يرجى كتابة نبذة عن الباحث من 20 إلى 1000 حرف.");
       return;
     }
 
@@ -149,11 +135,6 @@ export function VolunteerForm() {
       return;
     }
 
-    if (!turnstileToken) {
-      setError("يرجى إكمال التحقق الأمني قبل إرسال الطلب.");
-      return;
-    }
-
     formData.set("fullName", fullName);
     formData.set("email", email);
     formData.set("phone", phone);
@@ -162,7 +143,6 @@ export function VolunteerForm() {
     formData.set("researcherBio", researcherBio);
     formData.set("skillsAndExpertise", skillsAndExpertise);
     formData.set("cv", selectedFile);
-    formData.set("turnstileToken", turnstileToken);
 
     setIsSubmitting(true);
 
@@ -188,12 +168,11 @@ export function VolunteerForm() {
       }
 
       setSuccess(
-        "تم إنشاء حسابك وإرسال طلب انضمامك بنجاح! يرجى تأكيد بريدك الإلكتروني من خلال الرسالة المرسلة إليك، ثم تسجيل الدخول لمتابعة حالة طلبك ومعرفة قرار الإدارة."
+        "يمكنك الآن تسجيل الدخول لمتابعة حالة طلب انضمامك ومعرفة قرار الإدارة."
       );
 
       setPassword("");
       setConfirmPassword("");
-      setTurnstileToken("");
     } catch {
       setError(
         "تعذر الاتصال بالخادم. تحققي من اتصال الإنترنت وحاولي مرة أخرى."
@@ -433,9 +412,7 @@ export function VolunteerForm() {
                     id="volunteer-research-field"
                     name="researchField"
                     value={researchField}
-                    onChange={(e) =>
-                      setResearchField(e.target.value)
-                    }
+                    onChange={(e) => setResearchField(e.target.value)}
                     required
                     className="h-[50px] w-full cursor-pointer appearance-none rounded-[8px] border border-[#9DB5D8] bg-white pr-12 pl-12 text-[15px] text-[#071B2F] outline-none transition focus:border-[#164A68]"
                   >
@@ -447,15 +424,11 @@ export function VolunteerForm() {
                     <option value="technology">تقني</option>
                     <option value="social">اجتماعي</option>
                     <option value="education">تربوي</option>
-                    <option value="business">
-                      إداري واقتصادي
-                    </option>
+                    <option value="business">إداري واقتصادي</option>
                     <option value="law">قانوني</option>
                     <option value="humanities">إنساني</option>
                     <option value="environment">بيئي</option>
-                    <option value="basic-sciences">
-                      علوم أساسية
-                    </option>
+                    <option value="basic-sciences">علوم أساسية</option>
                     <option value="other">مجالات أخرى</option>
                   </select>
 
@@ -625,9 +598,7 @@ export function VolunteerForm() {
                     name="password"
                     type={showPassword ? "text" : "password"}
                     value={password}
-                    onChange={(e) =>
-                      setPassword(e.target.value)
-                    }
+                    onChange={(e) => setPassword(e.target.value)}
                     placeholder="أدخل كلمة المرور"
                     autoComplete="new-password"
                     minLength={8}
@@ -637,9 +608,7 @@ export function VolunteerForm() {
 
                   <button
                     type="button"
-                    onClick={() =>
-                      setShowPassword(!showPassword)
-                    }
+                    onClick={() => setShowPassword(!showPassword)}
                     aria-label={
                       showPassword
                         ? "إخفاء كلمة المرور"
@@ -680,9 +649,7 @@ export function VolunteerForm() {
                   <input
                     id="volunteer-confirm-password"
                     name="confirmPassword"
-                    type={
-                      showConfirmPassword ? "text" : "password"
-                    }
+                    type={showConfirmPassword ? "text" : "password"}
                     value={confirmPassword}
                     onChange={(e) =>
                       setConfirmPassword(e.target.value)
@@ -696,9 +663,7 @@ export function VolunteerForm() {
                   <button
                     type="button"
                     onClick={() =>
-                      setShowConfirmPassword(
-                        !showConfirmPassword
-                      )
+                      setShowConfirmPassword(!showConfirmPassword)
                     }
                     aria-label={
                       showConfirmPassword
@@ -715,12 +680,11 @@ export function VolunteerForm() {
                   </button>
                 </div>
 
-                {confirmPassword &&
-                  password !== confirmPassword && (
-                    <p className="mt-2 text-[13px] text-red-500">
-                      كلمتا المرور غير متطابقتين.
-                    </p>
-                  )}
+                {confirmPassword && password !== confirmPassword && (
+                  <p className="mt-2 text-[13px] text-red-500">
+                    كلمتا المرور غير متطابقتين.
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -759,16 +723,6 @@ export function VolunteerForm() {
             </div>
           )}
 
-          {/* Security Verification */}
-          {!success && (
-            <div className="mt-6">
-              <TurnstileWidget
-                onVerify={(token) => setTurnstileToken(token)}
-                onExpire={() => setTurnstileToken("")}
-              />
-            </div>
-          )}
-
           {/* Buttons */}
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <button
@@ -792,7 +746,6 @@ export function VolunteerForm() {
                 setConfirmPassword("");
                 setShowPassword(false);
                 setShowConfirmPassword(false);
-                setTurnstileToken("");
                 setError("");
                 setSuccess("");
               }}

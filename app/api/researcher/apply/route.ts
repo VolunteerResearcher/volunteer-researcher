@@ -5,7 +5,6 @@ import { fileTypeFromBuffer } from "file-type";
 import { unzipSync } from "fflate";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { verifyTurnstile } from "@/lib/security/verify-turnstile";
 
 export const runtime = "nodejs";
 
@@ -50,10 +49,7 @@ function getText(formData: FormData, key: string): string {
 }
 
 function jsonError(message: string, status: number) {
-  return NextResponse.json(
-    { error: message },
-    { status }
-  );
+  return NextResponse.json({ error: message }, { status });
 }
 
 function hasOfficeStructure(
@@ -63,8 +59,6 @@ function hasOfficeStructure(
   try {
     const names = new Set<string>();
 
-    // نفحص أسماء الملفات داخل أرشيف Office
-    // دون فك ضغط محتوياتها.
     unzipSync(bytes, {
       filter: (entry) => {
         names.add(entry.name);
@@ -107,10 +101,7 @@ async function validateCV(
     return { valid: false };
   }
 
-  const bytes = new Uint8Array(
-    await file.arrayBuffer()
-  );
-
+  const bytes = new Uint8Array(await file.arrayBuffer());
   const detected = await fileTypeFromBuffer(bytes);
 
   if (!detected) {
@@ -166,42 +157,6 @@ async function validateCV(
   return { valid: false };
 }
 
-// رابط تأكيد البريد الإلكتروني للباحث
-function getTrustedRedirectURL(): string | null {
-  const productionURL =
-    "https://volunteer-researcher.vercel.app";
-
-  const configuredURL =
-    process.env.NEXT_PUBLIC_SITE_URL?.trim();
-
-  if (configuredURL) {
-    try {
-      const parsed = new URL(configuredURL);
-
-      const isLocalhost =
-        parsed.hostname === "localhost" &&
-        parsed.protocol === "http:";
-
-      const isProduction =
-        parsed.origin === productionURL;
-
-      if (isLocalhost || isProduction) {
-        return `${parsed.origin}/ar/researcher-login?confirmed=true`;
-      }
-
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  if (process.env.NODE_ENV === "development") {
-    return "http://localhost:3000/ar/researcher-login?confirmed=true";
-  }
-
-  return `${productionURL}/ar/researcher-login?confirmed=true`;
-}
-
 export async function POST(request: NextRequest) {
   try {
     const contentType =
@@ -212,10 +167,7 @@ export async function POST(request: NextRequest) {
     );
 
     if (!contentType.includes("multipart/form-data")) {
-      return jsonError(
-        "صيغة الطلب غير صحيحة.",
-        415
-      );
+      return jsonError("صيغة الطلب غير صحيحة.", 415);
     }
 
     if (
@@ -231,30 +183,11 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
 
-    const fullName = getText(
-      formData,
-      "fullName"
-    );
-
-    const email = getText(
-      formData,
-      "email"
-    ).toLowerCase();
-
-    const password = getText(
-      formData,
-      "password"
-    );
-
-    const phone = getText(
-      formData,
-      "phone"
-    );
-
-    const workplace = getText(
-      formData,
-      "workplace"
-    );
+    const fullName = getText(formData, "fullName");
+    const email = getText(formData, "email").toLowerCase();
+    const password = getText(formData, "password");
+    const phone = getText(formData, "phone");
+    const workplace = getText(formData, "workplace");
 
     const generalSpecialization = getText(
       formData,
@@ -281,14 +214,9 @@ export async function POST(request: NextRequest) {
       "skillsAndExpertise"
     );
 
-    const turnstileToken = getText(
-      formData,
-      "turnstileToken"
-    );
-
     const cv = formData.get("cv");
 
-    // التحقق من بيانات النموذج
+    // التحقق من صحة بيانات الباحث
     if (
       !fullName ||
       fullName.length > 150 ||
@@ -322,15 +250,9 @@ export async function POST(request: NextRequest) {
     }
 
     const extension =
-      cv.name
-        .split(".")
-        .pop()
-        ?.toLowerCase() || "";
+      cv.name.split(".").pop()?.toLowerCase() || "";
 
-    const validatedCV = await validateCV(
-      cv,
-      extension
-    );
+    const validatedCV = await validateCV(cv, extension);
 
     if (
       !validatedCV.valid ||
@@ -340,18 +262,6 @@ export async function POST(request: NextRequest) {
       return jsonError(
         "ملف السيرة الذاتية غير صالح أو لا يطابق صيغته، أو يتجاوز 10 ميجابايت.",
         400
-      );
-    }
-
-    // التحقق الأمني
-    const verified = await verifyTurnstile(
-      turnstileToken
-    );
-
-    if (!verified) {
-      return jsonError(
-        "تعذر إكمال التحقق الأمني. يرجى إعادة المحاولة.",
-        403
       );
     }
 
@@ -368,16 +278,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const redirectURL = getTrustedRedirectURL();
-
-    if (!redirectURL) {
-      return jsonError(
-        "إعدادات رابط تأكيد البريد غير صحيحة.",
-        503
-      );
-    }
-
-    // إنشاء حساب الباحث
+    // إنشاء حساب الباحث بدون اشتراط تأكيد البريد
     const signupClient = createClient(
       supabaseUrl,
       publishableKey,
@@ -402,7 +303,6 @@ export async function POST(request: NextRequest) {
           full_name: fullName,
           account_type: "researcher",
         },
-        emailRedirectTo: redirectURL,
       },
     });
 
@@ -413,7 +313,7 @@ export async function POST(request: NextRequest) {
       );
 
       return jsonError(
-        "تعذر إنشاء الحساب. تأكدي من صحة البريد الإلكتروني أو استخدمي تسجيل الدخول إذا كان لديك حساب سابق.",
+        "تعذر إنشاء الحساب. تأكدي من صحة البيانات أو استخدمي تسجيل الدخول إذا كان لديك حساب سابق.",
         400
       );
     }
@@ -421,14 +321,12 @@ export async function POST(request: NextRequest) {
     const user = signupData.user;
 
     if (
-      !user ||
-      !user.id ||
+      !user?.id ||
       !user.identities ||
-      user.identities.length === 0 ||
-      signupData.session !== null
+      user.identities.length === 0
     ) {
       return jsonError(
-        "إذا كان البريد جديدًا، يرجى التحقق من رسالة التأكيد. وإذا كان لديك حساب سابق، استخدمي تسجيل الدخول.",
+        "تعذر إنشاء حساب جديد بهذا البريد. إذا كان لديك حساب سابق، استخدمي تسجيل الدخول.",
         409
       );
     }
@@ -466,7 +364,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // حفظ طلب الباحث مع النبذة والمهارات
+    // حفظ طلب الباحث
     const { error: applicationError } =
       await admin
         .from("pending_researcher_applications")
@@ -513,7 +411,7 @@ export async function POST(request: NextRequest) {
       {
         success: true,
         message:
-          "تم إنشاء الحساب وحفظ طلب الانضمام والسيرة الذاتية. يرجى تأكيد بريدك الإلكتروني، ثم تسجيل الدخول لمتابعة حالة طلبك.",
+          "تم إنشاء الحساب وحفظ طلب الانضمام والسيرة الذاتية بنجاح. يمكنك تسجيل الدخول لمتابعة حالة طلبك ومعرفة قرار الإدارة.",
       },
       { status: 201 }
     );
