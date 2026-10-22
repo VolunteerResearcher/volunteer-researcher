@@ -166,7 +166,11 @@ async function validateCV(
   return { valid: false };
 }
 
+// رابط تأكيد البريد الإلكتروني للباحث
 function getTrustedRedirectURL(): string | null {
+  const productionURL =
+    "https://volunteer-researcher.vercel.app";
+
   const configuredURL =
     process.env.NEXT_PUBLIC_SITE_URL?.trim();
 
@@ -179,25 +183,23 @@ function getTrustedRedirectURL(): string | null {
         parsed.protocol === "http:";
 
       const isProduction =
-        parsed.hostname ===
-          "volunteer-researcher-dmja.vercel.app" &&
-        parsed.protocol === "https:";
+        parsed.origin === productionURL;
 
       if (isLocalhost || isProduction) {
         return `${parsed.origin}/ar/researcher-login?confirmed=true`;
       }
+
+      return null;
     } catch {
       return null;
     }
-
-    return null;
   }
 
   if (process.env.NODE_ENV === "development") {
     return "http://localhost:3000/ar/researcher-login?confirmed=true";
   }
 
-  return "https://volunteer-researcher-dmja.vercel.app/ar/researcher-login?confirmed=true";
+  return `${productionURL}/ar/researcher-login?confirmed=true`;
 }
 
 export async function POST(request: NextRequest) {
@@ -269,7 +271,6 @@ export async function POST(request: NextRequest) {
       "researchField"
     );
 
-    // الحقول الجديدة
     const researcherBio = getText(
       formData,
       "researcherBio"
@@ -367,8 +368,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const redirectURL =
-      getTrustedRedirectURL();
+    const redirectURL = getTrustedRedirectURL();
 
     if (!redirectURL) {
       return jsonError(
