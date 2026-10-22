@@ -7,6 +7,7 @@ import {
   Loader2,
   AlertCircle,
   ArrowUpLeft,
+  ClipboardList,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -43,7 +44,7 @@ const statusStyles: Record<RequestStatus, string> = {
   "جديد": "bg-[#EAF2F8] text-[#164A68]",
   "تحت المراجعة": "bg-[#FFF3D6] text-[#A36A00]",
   "بانتظار معلومات إضافية":
-    "bg-[#F4E8FF] text-[#7A3EA1]",
+    "bg-[#FFF3D6] text-[#9A6700]",
   "بانتظار رد الباحث":
     "bg-[#F0EEFF] text-[#6554A4]",
   "اعتذر الباحث":
@@ -66,6 +67,9 @@ function getRequestStatus(status: string): RequestStatus {
   switch (status) {
     case "pending":
       return "جديد";
+
+    case "needs_revision":
+      return "بانتظار معلومات إضافية";
 
     case "assigned":
       return "تحت المراجعة";
@@ -133,7 +137,9 @@ export function RequestsTable() {
             "id, title, help_type, assigned_researcher_id, created_at, status"
           )
           .eq("beneficiary_id", user.id)
-          .order("created_at", { ascending: false });
+          .order("created_at", {
+            ascending: false,
+          });
 
         if (error) {
           throw new Error(
@@ -147,11 +153,16 @@ export function RequestsTable() {
           ...new Set(
             rows
               .map((item) => item.assigned_researcher_id)
-              .filter((id): id is string => Boolean(id))
+              .filter(
+                (id): id is string => Boolean(id)
+              )
           ),
         ];
 
-        const researcherNames = new Map<string, string>();
+        const researcherNames = new Map<
+          string,
+          string
+        >();
 
         if (researcherIds.length > 0) {
           const {
@@ -192,6 +203,7 @@ export function RequestsTable() {
 
         if (!cancelled) {
           setRequests(realRequests);
+          setErrorMessage("");
         }
       } catch (error) {
         if (!cancelled) {
@@ -230,6 +242,11 @@ export function RequestsTable() {
     );
   });
 
+  const revisionRequestsCount = requests.filter(
+    (request) =>
+      request.status === "بانتظار معلومات إضافية"
+  ).length;
+
   const openRequest = (id: string) => {
     router.push(`/ar/profile/requests/${id}`);
   };
@@ -246,12 +263,42 @@ export function RequestsTable() {
             طلباتي
           </h2>
 
-          <p className="mt-2 text-[16px] text-[#6B7280] sm:text-[18px]">
+          <p className="mt-2 text-[16px] leading-7 text-[#6B7280] sm:text-[18px]">
             يمكنك متابعة حالة طلباتك الاستشارية التي قمت بتقديمها.
           </p>
         </div>
 
-        {/* البطاقة */}
+        {/* تنبيه الطلبات التي تحتاج استكمال */}
+        {!isLoading &&
+          !errorMessage &&
+          revisionRequestsCount > 0 && (
+            <div className="mb-6 flex flex-col gap-4 rounded-[18px] border border-[#F4D79B] bg-[#FFF9EC] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+              <div className="flex items-start gap-3">
+                <AlertCircle
+                  size={23}
+                  className="mt-1 shrink-0 text-[#A16207]"
+                />
+
+                <div>
+                  <h3 className="font-semibold text-[#8A5B00]">
+                    لديك طلبات تحتاج إلى استكمال
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-7 text-[#785B29]">
+                    لديك {revisionRequestsCount}{" "}
+                    {revisionRequestsCount === 1
+                      ? "طلب يحتاج"
+                      : "طلبات تحتاج"}{" "}
+                    إلى معلومات إضافية.
+                    افتح تفاصيل الطلب للاطلاع
+                    على ملاحظات الإدارة.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+        {/* البطاقة الرئيسية */}
         <div className="rounded-[24px] border border-[#9DB5D8] bg-white px-4 py-5 sm:px-5 md:px-6 md:py-6">
           {/* البحث */}
           <div className="mb-5">
@@ -299,103 +346,199 @@ export function RequestsTable() {
               <span>جارٍ تحميل طلباتك...</span>
             </div>
           ) : !errorMessage ? (
-            /* الجدول */
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] border-separate border-spacing-y-2">
-                <thead>
-                  <tr className="text-right text-[14px] text-[#071B2F]">
-                    <th className="px-4 py-3 font-normal">
-                      عنوان الطلب
-                    </th>
+            <>
+              {/* عرض الجوال */}
+              <div className="space-y-4 md:hidden">
+                {filteredRequests.map((request) => (
+                  <article
+                    key={request.id}
+                    className="rounded-[16px] border border-[#D7E3EF] bg-[#F8FBFD] p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex min-w-0 flex-1 items-start gap-2">
+                        <ClipboardList
+                          size={19}
+                          className="mt-1 shrink-0 text-[#164A68]"
+                        />
 
-                    <th className="px-4 py-3 font-normal">
-                      نوع المساعدة
-                    </th>
+                        <h3 className="break-words text-[15px] font-semibold leading-7 text-[#071B2F]">
+                          {request.title}
+                        </h3>
+                      </div>
 
-                    <th className="px-4 py-3 font-normal">
-                      الباحث المحدد
-                    </th>
-
-                    <th className="px-4 py-3 font-normal">
-                      تاريخ التقديم
-                    </th>
-
-                    <th className="px-4 py-3 font-normal">
-                      رقم الطلب
-                    </th>
-
-                    <th className="px-4 py-3 font-normal">
-                      حالة الطلب
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredRequests.map((request) => (
-                    <tr
-                      key={request.id}
-                      className="bg-[#F8FBFD] text-[14px] text-[#071B2F]"
-                    >
-                      <td className="rounded-r-[10px] px-4 py-4">
-                        {request.title}
-                      </td>
-
-                      <td className="px-4 py-4">
-                        {request.helpType}
-                      </td>
-
-                      <td className="px-4 py-4">
-                        {request.researcher}
-                      </td>
-
-                      <td className="px-4 py-4">
-                        {request.date}
-                      </td>
-
-                      <td className="px-4 py-4 text-[#164A68]">
-                        #{request.id.slice(0, 8)}
-                      </td>
-
-                      {/* حالة الطلب + زر عرض التفاصيل */}
-                      <td className="rounded-l-[10px] px-4 py-4">
-                        <div className="flex items-center gap-3">
-                          <span
-                            className={`inline-flex shrink-0 rounded-full px-3 py-1 text-[13px] ${statusStyles[request.status]}`}
-                          >
-                            {request.status}
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openRequest(request.id)
-                            }
-                            aria-label={`عرض تفاصيل الطلب ${request.id}`}
-                            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-[8px] bg-[#164A68] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#071B2F] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#164A68]"
-                          >
-                            عرض التفاصيل
-                            <ArrowUpLeft size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-
-                  {filteredRequests.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className="py-12 text-center text-sm text-[#64748B]"
+                      <span
+                        className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-medium ${statusStyles[request.status]}`}
                       >
-                        {requests.length === 0
-                          ? "لا توجد لديك طلبات استشارية حتى الآن."
-                          : "لا توجد طلبات مطابقة لبحثك."}
-                      </td>
+                        {request.status}
+                      </span>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-2 gap-x-3 gap-y-4 text-[13px]">
+                      <div className="min-w-0">
+                        <p className="text-[#64748B]">
+                          رقم الطلب
+                        </p>
+
+                        <p className="mt-1 font-medium text-[#164A68]">
+                          #{request.id.slice(0, 8)}
+                        </p>
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="text-[#64748B]">
+                          تاريخ التقديم
+                        </p>
+
+                        <p className="mt-1 text-[#071B2F]">
+                          {request.date}
+                        </p>
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="text-[#64748B]">
+                          نوع المساعدة
+                        </p>
+
+                        <p className="mt-1 break-words text-[#071B2F]">
+                          {request.helpType}
+                        </p>
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="text-[#64748B]">
+                          الباحث المحدد
+                        </p>
+
+                        <p className="mt-1 break-words text-[#071B2F]">
+                          {request.researcher}
+                        </p>
+                      </div>
+                    </div>
+
+                    {request.status ===
+                      "بانتظار معلومات إضافية" && (
+                      <div className="mt-4 rounded-xl bg-[#FFF3D6] p-3 text-xs leading-6 text-[#9A6700]">
+                        يرجى الاطلاع على ملاحظات
+                        الإدارة واستكمال بيانات
+                        الطلب.
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openRequest(request.id)
+                      }
+                      className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[10px] bg-[#164A68] px-4 py-3 text-sm font-medium text-white transition hover:bg-[#071B2F]"
+                    >
+                      {request.status ===
+                      "بانتظار معلومات إضافية"
+                        ? "عرض الملاحظات واستكمال الطلب"
+                        : "عرض التفاصيل"}
+
+                      <ArrowUpLeft size={16} />
+                    </button>
+                  </article>
+                ))}
+              </div>
+
+              {/* جدول الآيباد واللابتوب */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[900px] border-separate border-spacing-y-2">
+                  <thead>
+                    <tr className="text-right text-[14px] text-[#071B2F]">
+                      <th className="px-4 py-3 font-normal">
+                        عنوان الطلب
+                      </th>
+
+                      <th className="px-4 py-3 font-normal">
+                        نوع المساعدة
+                      </th>
+
+                      <th className="px-4 py-3 font-normal">
+                        الباحث المحدد
+                      </th>
+
+                      <th className="px-4 py-3 font-normal">
+                        تاريخ التقديم
+                      </th>
+
+                      <th className="px-4 py-3 font-normal">
+                        رقم الطلب
+                      </th>
+
+                      <th className="px-4 py-3 font-normal">
+                        حالة الطلب
+                      </th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+
+                  <tbody>
+                    {filteredRequests.map((request) => (
+                      <tr
+                        key={request.id}
+                        className="bg-[#F8FBFD] text-[14px] text-[#071B2F]"
+                      >
+                        <td className="rounded-r-[10px] px-4 py-4">
+                          {request.title}
+                        </td>
+
+                        <td className="px-4 py-4">
+                          {request.helpType}
+                        </td>
+
+                        <td className="px-4 py-4">
+                          {request.researcher}
+                        </td>
+
+                        <td className="px-4 py-4">
+                          {request.date}
+                        </td>
+
+                        <td className="px-4 py-4 text-[#164A68]">
+                          #{request.id.slice(0, 8)}
+                        </td>
+
+                        <td className="rounded-l-[10px] px-4 py-4">
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`inline-flex shrink-0 rounded-full px-3 py-1 text-[13px] ${statusStyles[request.status]}`}
+                            >
+                              {request.status}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openRequest(request.id)
+                              }
+                              aria-label={`عرض تفاصيل الطلب ${request.id}`}
+                              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-[8px] bg-[#164A68] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#071B2F] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#164A68]"
+                            >
+                              {request.status ===
+                              "بانتظار معلومات إضافية"
+                                ? "استكمال الطلب"
+                                : "عرض التفاصيل"}
+
+                              <ArrowUpLeft size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* حالة عدم وجود طلبات */}
+              {filteredRequests.length === 0 && (
+                <div className="py-12 text-center text-sm text-[#64748B]">
+                  {requests.length === 0
+                    ? "لا توجد لديك طلبات استشارية حتى الآن."
+                    : "لا توجد طلبات مطابقة لبحثك."}
+                </div>
+              )}
+            </>
           ) : null}
         </div>
       </div>

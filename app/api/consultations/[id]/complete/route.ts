@@ -3,9 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+export const runtime = "nodejs";
+
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function PATCH(
   _request: NextRequest,
@@ -13,6 +18,13 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
+
+    if (!UUID_REGEX.test(id)) {
+      return NextResponse.json(
+        { error: "رقم الطلب غير صالح." },
+        { status: 400 }
+      );
+    }
 
     const supabase = await createClient();
 
@@ -30,16 +42,52 @@ export async function PATCH(
 
     const admin = createAdminClient();
 
-    const { data: consultation, error: consultationError } =
+    // التأكد من أن المستخدم باحث متطوع
+    const { data: profile, error: profileError } =
       await admin
-        .from("consultation_requests")
-        .select(
-          "id, beneficiary_id, assigned_researcher_id, status"
-        )
-        .eq("id", id)
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
         .maybeSingle();
 
+    if (profileError) {
+      console.error(
+        "Complete consultation profile error:",
+        profileError
+      );
+
+      return NextResponse.json(
+        { error: "تعذر التحقق من صلاحيات المستخدم." },
+        { status: 500 }
+      );
+    }
+
+    if (profile?.role !== "researcher") {
+      return NextResponse.json(
+        {
+          error:
+            "إنهاء الاستشارة متاح للباحث المعيّن فقط.",
+        },
+        { status: 403 }
+      );
+    }
+
+    // جلب الطلب للتحقق من الباحث وحالة الاستشارة
+    const {
+      data: consultation,
+      error: consultationError,
+    } = await admin
+      .from("consultation_requests")
+      .select("id, assigned_researcher_id, status")
+      .eq("id", id)
+      .maybeSingle();
+
     if (consultationError) {
+      console.error(
+        "Complete consultation lookup error:",
+        consultationError
+      );
+
       return NextResponse.json(
         { error: "تعذر التحقق من الطلب." },
         { status: 500 }
@@ -53,62 +101,86 @@ export async function PATCH(
       );
     }
 
-    const isBeneficiary =
-      consultation.beneficiary_id === user.id;
-
-    const isResearcher =
-      consultation.assigned_researcher_id === user.id;
-
-    if (!isBeneficiary && !isResearcher) {
+    if (
+      consultation.assigned_researcher_id !== user.id
+    ) {
       return NextResponse.json(
-        { error: "ليس لديك صلاحية إنهاء هذا الطلب." },
+        {
+          error:
+            "لا يمكنك إنهاء استشارة مسندة إلى باحث آخر.",
+        },
         { status: 403 }
       );
     }
 
     if (consultation.status !== "in_progress") {
       return NextResponse.json(
-        { error: "يمكن إنهاء الطلبات قيد التنفيذ فقط." },
+        {
+          error:
+            "يمكن إنهاء الاستشارات قيد التنفيذ فقط.",
+        },
         { status: 409 }
       );
     }
 
     const completedAt = new Date().toISOString();
 
-    const { data: updated, error: updateError } = await admin
-      .from("consultation_requests")
-      .update({
-        status: "completed",
-        completed_by: user.id,
-        completed_at: completedAt,
-        updated_at: completedAt,
-      })
-      .eq("id", id)
-      .eq("status", "in_progress")
-      .select("id, status, completed_by, completed_at")
-      .maybeSingle();
+    // تحديث مشروط لمنع الإنهاء المكرر
+    const { data: updated, error: updateError } =
+      await admin
+        .from("consultation_requests")
+        .update({
+          status: "completed",
+          completed_by: user.id,
+          completed_at: completedAt,
+          updated_at: completedAt,
+        })
+        .eq("id", id)
+        .eq("assigned_researcher_id", user.id)
+        .eq("status", "in_progress")
+        .select(
+          "id, status, completed_by, completed_at"
+        )
+        .maybeSingle();
 
     if (updateError) {
+      console.error(
+        "Complete consultation update error:",
+        updateError
+      );
+
       return NextResponse.json(
-        { error: "تعذر إنهاء الطلب." },
+        { error: "تعذر إنهاء الاستشارة." },
         { status: 500 }
       );
     }
 
     if (!updated) {
       return NextResponse.json(
-        { error: "تم تغيير حالة الطلب بالفعل. حدّث الصفحة." },
+        {
+          error:
+            "تغيّرت حالة الاستشارة بالفعل. يرجى تحديث الصفحة.",
+        },
         { status: 409 }
       );
     }
 
     return NextResponse.json({
       success: true,
+      message: "تم إنهاء الاستشارة بنجاح.",
       consultation: updated,
     });
-  } catch {
+  } catch (error) {
+    console.error(
+      "Unexpected complete consultation error:",
+      error
+    );
+
     return NextResponse.json(
-      { error: "حدث خطأ غير متوقع أثناء إنهاء الطلب." },
+      {
+        error:
+          "حدث خطأ غير متوقع أثناء إنهاء الاستشارة.",
+      },
       { status: 500 }
     );
   }

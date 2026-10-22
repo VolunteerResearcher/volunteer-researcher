@@ -16,6 +16,9 @@ const ALLOWED_HELP_TYPES = new Set([
   "other",
 ]);
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const ALLOWED_FILES: Record<
   string,
   { mimeTypes: string[]; signatures: number[][] }
@@ -130,6 +133,21 @@ export async function POST(request: Request) {
       formData.get("additionalNotes") || ""
     ).trim();
 
+    // طريقة تقديم الطلب
+    const consultationMode = String(
+      formData.get("consultationMode") || ""
+    ).trim();
+
+    // الباحث الذي يفضله المستفيد
+    const requestedResearcherId = String(
+      formData.get("requestedResearcherId") || ""
+    ).trim();
+
+    // مجال البحث الذي أدخله المستفيد
+    const researchField = String(
+      formData.get("researchField") || ""
+    ).trim();
+
     const attachmentValue =
       formData.get("attachment");
 
@@ -171,6 +189,78 @@ export async function POST(request: Request) {
         "الملاحظات الإضافية طويلة جدًا.",
         400
       );
+    }
+
+    // التحقق من اختيار طريقة تقديم الطلب
+    if (
+      consultationMode !== "researcher" &&
+      consultationMode !== "field"
+    ) {
+      return jsonError(
+        "يرجى اختيار طريقة تقديم الطلب.",
+        400
+      );
+    }
+
+    const admin = createAdminClient();
+
+    let validatedResearcherId: string | null = null;
+    let validatedResearchField: string | null = null;
+
+    if (consultationMode === "researcher") {
+      if (!UUID_REGEX.test(requestedResearcherId)) {
+        return jsonError(
+          "يرجى اختيار باحث من القائمة.",
+          400
+        );
+      }
+
+      // لا نقبل إلا باحثًا معتمدًا بالفعل
+      const {
+        data: approvedResearcher,
+        error: researcherError,
+      } = await admin
+        .from("profiles")
+        .select("id")
+        .eq("id", requestedResearcherId)
+        .eq("role", "researcher")
+        .eq("approval_status", "approved")
+        .maybeSingle();
+
+      if (researcherError) {
+        console.error(
+          "Requested researcher validation error:",
+          researcherError.message
+        );
+
+        return jsonError(
+          "تعذر التحقق من الباحث المختار.",
+          500
+        );
+      }
+
+      if (!approvedResearcher) {
+        return jsonError(
+          "الباحث المختار غير متاح أو لم يعد معتمدًا.",
+          400
+        );
+      }
+
+      validatedResearcherId = approvedResearcher.id;
+    }
+
+    if (consultationMode === "field") {
+      if (
+        researchField.length < 2 ||
+        researchField.length > 200
+      ) {
+        return jsonError(
+          "مجال البحث يجب أن يكون بين حرفين و200 حرف.",
+          400
+        );
+      }
+
+      validatedResearchField = researchField;
     }
 
     let fileBytes: Uint8Array | null = null;
@@ -232,8 +322,6 @@ export async function POST(request: Request) {
       fileMimeType = attachment.type;
     }
 
-    const admin = createAdminClient();
-
     const requestId = randomUUID();
 
     if (
@@ -278,6 +366,15 @@ export async function POST(request: Request) {
           attachment_path: uploadedPath,
           additional_notes:
             additionalNotes || null,
+
+          // اختيار المستفيد فقط، وليس إسنادًا رسميًا
+          requested_researcher_id:
+            validatedResearcherId,
+
+          research_field:
+            validatedResearchField,
+
+          // الإسناد يبقى من صلاحية الإدارة
           assigned_researcher_id: null,
           status: "pending",
         });
@@ -316,6 +413,21 @@ export async function POST(request: Request) {
         ? error.message
         : "Unknown error"
     );
+
+    if (uploadedPath) {
+      try {
+        const admin = createAdminClient();
+
+        await admin.storage
+          .from("consultation-attachments")
+          .remove([uploadedPath]);
+      } catch (cleanupError) {
+        console.error(
+          "Consultation attachment cleanup error:",
+          cleanupError
+        );
+      }
+    }
 
     return jsonError(
       "حدث خطأ غير متوقع أثناء إرسال الطلب.",

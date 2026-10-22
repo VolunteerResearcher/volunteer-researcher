@@ -14,6 +14,15 @@ import {
   Loader2,
 } from "lucide-react";
 
+type ConsultationMode = "researcher" | "field";
+
+type ConsultationFormProps = {
+  consultationMode: ConsultationMode;
+  requestedResearcherId: string;
+  researchField: string;
+  onResetConsultationSelection: () => void;
+};
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 const ALLOWED_EXTENSIONS = [
@@ -24,18 +33,43 @@ const ALLOWED_EXTENSIONS = [
   "pptx",
 ];
 
-export function ConsultationForm() {
+export function ConsultationForm({
+  consultationMode,
+  requestedResearcherId,
+  researchField,
+  onResetConsultationSelection,
+}: ConsultationFormProps) {
   const router = useRouter();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [helpType, setHelpType] = useState("");
-  const [attachment, setAttachment] = useState<File | null>(null);
+  const [attachment, setAttachment] = useState<File | null>(
+    null
+  );
   const [additionalNotes, setAdditionalNotes] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  const resetForm = () => {
+    setTitle("");
+    setDescription("");
+    setHelpType("");
+    setAttachment(null);
+    setAdditionalNotes("");
+
+    onResetConsultationSelection();
+
+    const fileInput = document.getElementById(
+      "consultation-attachment"
+    ) as HTMLInputElement | null;
+
+    if (fileInput) {
+      fileInput.value = "";
+    }
+  };
 
   const handleFileChange = (
     event: React.ChangeEvent<HTMLInputElement>
@@ -55,6 +89,7 @@ export function ConsultationForm() {
     if (!ALLOWED_EXTENSIONS.includes(extension)) {
       setAttachment(null);
       event.target.value = "";
+
       setErrorMessage(
         "نوع الملف غير مدعوم. يرجى اختيار PDF أو Word أو PowerPoint."
       );
@@ -64,6 +99,7 @@ export function ConsultationForm() {
     if (file.size > MAX_FILE_SIZE) {
       setAttachment(null);
       event.target.value = "";
+
       setErrorMessage(
         "حجم الملف يجب ألا يتجاوز 10 ميجابايت."
       );
@@ -82,6 +118,34 @@ export function ConsultationForm() {
 
     setErrorMessage("");
     setSuccessMessage("");
+
+    if (consultationMode === "researcher") {
+      if (!requestedResearcherId.trim()) {
+        setErrorMessage(
+          "يرجى اختيار الباحث من القائمة قبل إرسال الطلب."
+        );
+
+        document
+          .getElementById("consultation-researcher")
+          ?.focus();
+
+        return;
+      }
+    } else {
+      const field = researchField.trim();
+
+      if (field.length < 2 || field.length > 200) {
+        setErrorMessage(
+          "يرجى إدخال مجال البحث بين حرفين و200 حرف."
+        );
+
+        document
+          .getElementById("consultation-research-field")
+          ?.focus();
+
+        return;
+      }
+    }
 
     if (title.trim().length < 3 || title.trim().length > 200) {
       setErrorMessage(
@@ -105,6 +169,13 @@ export function ConsultationForm() {
       return;
     }
 
+    if (additionalNotes.trim().length > 2000) {
+      setErrorMessage(
+        "الملاحظات الإضافية طويلة جدًا."
+      );
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -113,10 +184,29 @@ export function ConsultationForm() {
       formData.append("title", title.trim());
       formData.append("description", description.trim());
       formData.append("helpType", helpType);
+
       formData.append(
         "additionalNotes",
         additionalNotes.trim()
       );
+
+      // إرسال اختيار المستفيد إلى API
+      formData.append(
+        "consultationMode",
+        consultationMode
+      );
+
+      if (consultationMode === "researcher") {
+        formData.append(
+          "requestedResearcherId",
+          requestedResearcherId.trim()
+        );
+      } else {
+        formData.append(
+          "researchField",
+          researchField.trim()
+        );
+      }
 
       if (attachment) {
         formData.append("attachment", attachment);
@@ -144,6 +234,7 @@ export function ConsultationForm() {
               "تعذر إرسال طلب الاستشارة. يرجى المحاولة مرة أخرى."
           );
         }
+
         return;
       }
 
@@ -152,23 +243,14 @@ export function ConsultationForm() {
           "تم إرسال طلب الاستشارة بنجاح."
       );
 
-      setTitle("");
-      setDescription("");
-      setHelpType("");
-      setAttachment(null);
-      setAdditionalNotes("");
-
-      const fileInput = document.getElementById(
-        "consultation-attachment"
-      ) as HTMLInputElement | null;
-
-      if (fileInput) {
-        fileInput.value = "";
-      }
-
+      resetForm();
       router.refresh();
     } catch (error) {
-      console.error("Consultation submission error:", error);
+      console.error(
+        "Consultation submission error:",
+        error
+      );
+
       setErrorMessage(
         "حدث خطأ أثناء إرسال الطلب. يرجى المحاولة مرة أخرى."
       );
@@ -188,7 +270,7 @@ export function ConsultationForm() {
           className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6"
         >
           {/* Request Title */}
-          <div className="md:col-span-2">
+          <div className="min-w-0 md:col-span-2">
             <label
               htmlFor="consultation-title"
               className="mb-2 block text-[17px] text-[#071B2F]"
@@ -201,7 +283,7 @@ export function ConsultationForm() {
               <FileText
                 size={20}
                 strokeWidth={1.7}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-[#164A68]"
+                className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#164A68]"
               />
 
               <input
@@ -215,13 +297,13 @@ export function ConsultationForm() {
                 required
                 disabled={isSubmitting}
                 placeholder="اكتب عنوان مختصر للطلب"
-                className="h-[48px] w-full rounded-[8px] border border-[#9DB5D8] bg-white pr-12 pl-4 text-[15px] text-[#071B2F] outline-none transition placeholder:text-[#94A3B8] focus:border-[#164A68] disabled:opacity-60"
+                className="h-[48px] w-full min-w-0 rounded-[8px] border border-[#9DB5D8] bg-white pr-12 pl-4 text-[15px] text-[#071B2F] outline-none transition placeholder:text-[#94A3B8] focus:border-[#164A68] disabled:opacity-60"
               />
             </div>
           </div>
 
           {/* Request Description */}
-          <div className="md:col-span-2">
+          <div className="min-w-0 md:col-span-2">
             <label
               htmlFor="consultation-description"
               className="mb-2 block text-[17px] text-[#071B2F]"
@@ -234,7 +316,7 @@ export function ConsultationForm() {
               <FileText
                 size={20}
                 strokeWidth={1.7}
-                className="absolute right-4 top-4 text-[#164A68]"
+                className="pointer-events-none absolute right-4 top-4 text-[#164A68]"
               />
 
               <textarea
@@ -247,7 +329,7 @@ export function ConsultationForm() {
                 required
                 disabled={isSubmitting}
                 placeholder="يرجى توضيح تفاصيل طلبك ..."
-                className="min-h-[130px] w-full resize-none rounded-[8px] border border-[#9DB5D8] bg-white pr-12 pl-4 pt-3 text-[15px] text-[#071B2F] outline-none transition placeholder:text-[#94A3B8] focus:border-[#164A68] disabled:opacity-60"
+                className="min-h-[130px] w-full min-w-0 resize-y rounded-[8px] border border-[#9DB5D8] bg-white pr-12 pl-4 pt-3 text-[15px] text-[#071B2F] outline-none transition placeholder:text-[#94A3B8] focus:border-[#164A68] disabled:opacity-60"
               />
             </div>
 
@@ -257,7 +339,7 @@ export function ConsultationForm() {
           </div>
 
           {/* Help Type */}
-          <div>
+          <div className="min-w-0">
             <label
               htmlFor="consultation-help-type"
               className="mb-2 block text-[17px] text-[#071B2F]"
@@ -270,7 +352,7 @@ export function ConsultationForm() {
               <ListFilter
                 size={20}
                 strokeWidth={1.7}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-[#164A68]"
+                className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#164A68]"
               />
 
               <select
@@ -281,7 +363,7 @@ export function ConsultationForm() {
                 }
                 required
                 disabled={isSubmitting}
-                className="h-[48px] w-full appearance-none rounded-[8px] border border-[#9DB5D8] bg-white pr-12 pl-4 text-[15px] text-[#071B2F] outline-none focus:border-[#164A68] disabled:opacity-60"
+                className="h-[48px] w-full min-w-0 appearance-none rounded-[8px] border border-[#9DB5D8] bg-white pr-12 pl-4 text-[15px] text-[#071B2F] outline-none focus:border-[#164A68] disabled:opacity-60"
               >
                 <option value="">اختر نوع المساعدة</option>
                 <option value="research">استشارة بحثية</option>
@@ -294,7 +376,7 @@ export function ConsultationForm() {
           </div>
 
           {/* File Upload */}
-          <div>
+          <div className="min-w-0">
             <label
               htmlFor="consultation-attachment"
               className="mb-2 block text-[17px] text-[#071B2F]"
@@ -307,10 +389,10 @@ export function ConsultationForm() {
 
             <label
               htmlFor="consultation-attachment"
-              className="flex min-h-[95px] cursor-pointer items-center justify-between rounded-[10px] border border-dashed border-[#9DB5D8] bg-[#F8FAFC] px-5 transition hover:border-[#164A68]"
+              className="flex min-h-[95px] min-w-0 cursor-pointer items-center justify-between gap-3 rounded-[10px] border border-dashed border-[#9DB5D8] bg-[#F8FAFC] px-4 transition hover:border-[#164A68] sm:px-5"
             >
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#EAF2F8]">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#EAF2F8]">
                   <Paperclip
                     size={22}
                     strokeWidth={1.7}
@@ -318,15 +400,15 @@ export function ConsultationForm() {
                   />
                 </div>
 
-                <div>
-                  <p className="text-[15px] text-[#071B2F]">
+                <div className="min-w-0">
+                  <p className="break-all text-[15px] text-[#071B2F]">
                     {attachment
                       ? attachment.name
                       : "اضغط لرفع ملف"}
                   </p>
 
                   <p className="mt-1 text-[13px] text-[#6B7280]">
-                    PDF, DOC, DOCX, PPT
+                    PDF, DOC, DOCX, PPT, PPTX
                   </p>
                 </div>
               </div>
@@ -334,7 +416,7 @@ export function ConsultationForm() {
               <Upload
                 size={21}
                 strokeWidth={1.7}
-                className="text-[#164A68]"
+                className="shrink-0 text-[#164A68]"
               />
 
               <input
@@ -349,7 +431,7 @@ export function ConsultationForm() {
           </div>
 
           {/* Additional Notes */}
-          <div className="md:col-span-2">
+          <div className="min-w-0 md:col-span-2">
             <label
               htmlFor="consultation-notes"
               className="mb-2 block text-[17px] text-[#071B2F]"
@@ -361,7 +443,7 @@ export function ConsultationForm() {
               <FileText
                 size={20}
                 strokeWidth={1.7}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-[#164A68]"
+                className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#164A68]"
               />
 
               <input
@@ -374,13 +456,13 @@ export function ConsultationForm() {
                 maxLength={2000}
                 disabled={isSubmitting}
                 placeholder="يمكنك إضافة أي ملاحظات أخرى ..."
-                className="h-[48px] w-full rounded-[8px] border border-[#9DB5D8] bg-white pr-12 pl-4 text-[15px] text-[#071B2F] outline-none transition placeholder:text-[#94A3B8] focus:border-[#164A68] disabled:opacity-60"
+                className="h-[48px] w-full min-w-0 rounded-[8px] border border-[#9DB5D8] bg-white pr-12 pl-4 text-[15px] text-[#071B2F] outline-none transition placeholder:text-[#94A3B8] focus:border-[#164A68] disabled:opacity-60"
               />
             </div>
           </div>
 
           {/* Login Notice */}
-          <div className="md:col-span-2 flex items-start gap-3 rounded-[10px] border border-[#D6E4F0] bg-[#F8FBFD] px-4 py-3">
+          <div className="flex min-w-0 items-start gap-3 rounded-[10px] border border-[#D6E4F0] bg-[#F8FBFD] px-4 py-3 md:col-span-2">
             <Info
               size={20}
               strokeWidth={1.8}
@@ -388,9 +470,9 @@ export function ConsultationForm() {
             />
 
             <p className="text-[14px] leading-6 text-[#071B2F]">
-              لإرسال طلب الاستشارة، يجب أن يكون لديك حساب وأن تكون
-              مسجل الدخول. يمكنك تعبئة النموذج، ولكن لن يتم إرسال الطلب
-              إلا بعد تسجيل الدخول.
+              لإرسال طلب الاستشارة، يجب أن يكون لديك حساب وأن
+              تكون مسجل الدخول. يمكنك تعبئة النموذج، ولكن لن يتم
+              إرسال الطلب إلا بعد تسجيل الدخول.
             </p>
           </div>
 
@@ -398,7 +480,7 @@ export function ConsultationForm() {
           {errorMessage && (
             <div
               role="alert"
-              className="md:col-span-2 flex items-start gap-3 rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm leading-7 text-red-700"
+              className="flex min-w-0 items-start gap-3 rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-sm leading-7 text-red-700 md:col-span-2"
             >
               <AlertCircle
                 size={20}
@@ -411,7 +493,7 @@ export function ConsultationForm() {
           {successMessage && (
             <div
               role="status"
-              className="md:col-span-2 flex items-start gap-3 rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 text-sm leading-7 text-green-700"
+              className="flex min-w-0 items-start gap-3 rounded-[10px] border border-green-200 bg-green-50 px-4 py-3 text-sm leading-7 text-green-700 md:col-span-2"
             >
               <CheckCircle2
                 size={20}
@@ -422,11 +504,11 @@ export function ConsultationForm() {
           )}
 
           {/* Actions */}
-          <div className="md:col-span-2 flex flex-col gap-3 pt-3 sm:flex-row">
+          <div className="flex flex-col gap-3 pt-3 sm:flex-row md:col-span-2">
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex min-h-[46px] min-w-[160px] items-center justify-center gap-2 rounded-[7px] bg-gradient-to-b from-[#071B2F] to-[#164A68] px-8 text-[15px] text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-[7px] bg-gradient-to-b from-[#071B2F] to-[#164A68] px-8 text-[15px] text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:min-w-[160px]"
             >
               {isSubmitting ? (
                 <>
@@ -445,24 +527,11 @@ export function ConsultationForm() {
               type="button"
               disabled={isSubmitting}
               onClick={() => {
-                setTitle("");
-                setDescription("");
-                setHelpType("");
-                setAttachment(null);
-                setAdditionalNotes("");
+                resetForm();
                 setErrorMessage("");
                 setSuccessMessage("");
-
-                const fileInput =
-                  document.getElementById(
-                    "consultation-attachment"
-                  ) as HTMLInputElement | null;
-
-                if (fileInput) {
-                  fileInput.value = "";
-                }
               }}
-              className="min-h-[46px] min-w-[160px] rounded-[7px] bg-[#D9D9D9] px-8 text-[15px] text-[#071B2F] transition hover:opacity-80 disabled:opacity-60"
+              className="min-h-[46px] w-full rounded-[7px] bg-[#D9D9D9] px-8 text-[15px] text-[#071B2F] transition hover:opacity-80 disabled:opacity-60 sm:w-auto sm:min-w-[160px]"
             >
               إلغاء
             </button>

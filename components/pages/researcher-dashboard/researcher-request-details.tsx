@@ -15,6 +15,8 @@ import {
   MessageSquareText,
   UserRound,
   XCircle,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 
 type ResearcherRequestDetailsProps = {
@@ -50,6 +52,7 @@ const statusLabels: Record<string, string> = {
   in_progress: "قيد التنفيذ",
   completed: "مكتمل",
   rejected: "مرفوض",
+  needs_revision: "بانتظار استكمال البيانات",
 };
 
 function getStatusStyle(status: string) {
@@ -87,6 +90,12 @@ export function ResearcherRequestDetails({
   const [rejectReason, setRejectReason] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [actionError, setActionError] = useState("");
+
+  const [showCompleteModal, setShowCompleteModal] =
+    useState(false);
+
+  const [completing, setCompleting] = useState(false);
+  const [completeError, setCompleteError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -205,7 +214,14 @@ export function ResearcherRequestDetails({
   async function respondToRequest(
     action: "accept" | "decline"
   ) {
-    if (saving || !requestData) return;
+    if (saving || completing || !requestData) return;
+
+    if (requestData.status !== "طلب جديد") {
+      setActionError(
+        "يمكن الرد على الطلبات الجديدة فقط."
+      );
+      return;
+    }
 
     setActionError("");
     setActionMessage("");
@@ -280,6 +296,104 @@ export function ResearcherRequestDetails({
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  function openCompleteModal() {
+    if (
+      !requestData ||
+      requestData.status !== "قيد التنفيذ" ||
+      saving ||
+      completing
+    ) {
+      return;
+    }
+
+    setCompleteError("");
+    setActionError("");
+    setActionMessage("");
+    setShowCompleteModal(true);
+  }
+
+  function closeCompleteModal() {
+    if (completing) return;
+
+    setShowCompleteModal(false);
+    setCompleteError("");
+  }
+
+  async function completeConsultation() {
+    if (
+      !requestData ||
+      requestData.status !== "قيد التنفيذ" ||
+      completing ||
+      saving
+    ) {
+      return;
+    }
+
+    setCompleting(true);
+    setCompleteError("");
+    setActionError("");
+    setActionMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/consultations/${encodeURIComponent(
+          requestId
+        )}/complete`,
+        {
+          method: "PATCH",
+        }
+      );
+
+      const result: {
+        success?: boolean;
+        message?: string;
+        error?: string;
+        consultation?: {
+          id: string;
+          status: string;
+          completed_at: string;
+          completed_by: string;
+        };
+      } = await response.json();
+
+      if (
+        !response.ok ||
+        !result.success ||
+        result.consultation?.status !== "completed"
+      ) {
+        throw new Error(
+          result.error ||
+            "تعذر إنهاء الاستشارة. يرجى المحاولة مرة أخرى."
+        );
+      }
+
+      setRequestData((current) =>
+        current
+          ? {
+              ...current,
+              status: "مكتمل",
+            }
+          : current
+      );
+
+      setActionMessage(
+        result.message ||
+          "تم إنهاء الاستشارة بنجاح."
+      );
+
+      setShowCompleteModal(false);
+      setCompleteError("");
+    } catch (error) {
+      setCompleteError(
+        error instanceof Error
+          ? error.message
+          : "حدث خطأ أثناء إنهاء الاستشارة."
+      );
+    } finally {
+      setCompleting(false);
     }
   }
 
@@ -415,7 +529,7 @@ export function ResearcherRequestDetails({
                     />
                   </div>
 
-                  <div>
+                  <div className="min-w-0">
                     <p className="mb-1 text-sm text-[#64748B]">
                       {item.label}
                     </p>
@@ -613,7 +727,8 @@ export function ResearcherRequestDetails({
         {actionMessage && (
           <div className="mt-5 rounded-[20px] border border-[#D7E3EF] bg-white p-6">
             <div className="flex items-start gap-3">
-              {status === "قيد التنفيذ" ? (
+              {status === "قيد التنفيذ" ||
+              status === "مكتمل" ? (
                 <CheckCircle2
                   size={23}
                   className="mt-1 shrink-0 text-[#2E7D4F]"
@@ -627,7 +742,9 @@ export function ResearcherRequestDetails({
 
               <div>
                 <h3 className="font-semibold text-[#071B2F]">
-                  {status === "قيد التنفيذ"
+                  {status === "مكتمل"
+                    ? "تم إنهاء الاستشارة"
+                    : status === "قيد التنفيذ"
                     ? "تم قبول الطلب"
                     : "تم الاعتذار عن الطلب"}
                 </h3>
@@ -637,6 +754,7 @@ export function ResearcherRequestDetails({
                 </p>
 
                 {status !== "قيد التنفيذ" &&
+                  status !== "مكتمل" &&
                   rejectReason && (
                     <div className="mt-4 rounded-2xl bg-[#F8FBFD] p-4">
                       <p className="mb-1 text-xs text-[#64748B]">
@@ -649,15 +767,16 @@ export function ResearcherRequestDetails({
                     </div>
                   )}
 
-                {status !== "قيد التنفيذ" && (
-                  <Link
-                    href="/ar/researcher-dashboard"
-                    className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-[#164A68]"
-                  >
-                    <ArrowRight size={17} />
-                    العودة إلى طلباتي
-                  </Link>
-                )}
+                {status !== "قيد التنفيذ" &&
+                  status !== "مكتمل" && (
+                    <Link
+                      href="/ar/researcher-dashboard"
+                      className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-[#164A68]"
+                    >
+                      <ArrowRight size={17} />
+                      العودة إلى طلباتي
+                    </Link>
+                  )}
               </div>
             </div>
           </div>
@@ -674,8 +793,8 @@ export function ResearcherRequestDetails({
 
                 <p className="mt-1 text-sm leading-7 text-[#64748B]">
                   الطلب مقبول. يمكنك الانتقال إلى
-                  صفحة المحادثة عند تفعيل خدمة
-                  المراسلة داخل المنصة.
+                  صفحة المحادثة للتواصل مع المستفيد
+                  ومتابعة الاستشارة.
                 </p>
               </div>
 
@@ -688,6 +807,66 @@ export function ResearcherRequestDetails({
                 <MessageSquareText size={18} />
                 التواصل مع المستفيد
               </Link>
+            </div>
+          </div>
+        )}
+
+        {/* إنهاء الاستشارة */}
+        {status === "قيد التنفيذ" && (
+          <div className="mt-5 rounded-[24px] border border-[#B9E3C8] bg-white p-6 sm:p-7">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#E8F7EE] text-[#2E7D4F]">
+                  <CheckCircle2 size={24} />
+                </div>
+
+                <div>
+                  <h2 className="text-lg font-semibold text-[#071B2F]">
+                    إنهاء الاستشارة
+                  </h2>
+
+                  <p className="mt-2 max-w-[560px] text-sm leading-7 text-[#64748B]">
+                    بعد الانتهاء من تقديم المساعدة
+                    البحثية للمستفيد، يمكنك إنهاء
+                    الاستشارة وتغيير حالتها إلى
+                    «مكتمل».
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={openCompleteModal}
+                disabled={saving || completing}
+                className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-full bg-[#2E7D4F] px-6 py-3 text-sm font-medium text-white transition hover:bg-[#24643F] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              >
+                <CheckCircle2 size={18} />
+                إنهاء الاستشارة
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* حالة الاستشارة المكتملة */}
+        {status === "مكتمل" && (
+          <div className="mt-5 rounded-[24px] border border-[#B9E3C8] bg-[#F2FBF5] p-6 sm:p-7">
+            <div className="flex items-start gap-3">
+              <CheckCircle2
+                size={24}
+                className="mt-1 shrink-0 text-[#2E7D4F]"
+              />
+
+              <div>
+                <h2 className="text-lg font-semibold text-[#2E7D4F]">
+                  الاستشارة مكتملة
+                </h2>
+
+                <p className="mt-2 text-sm leading-7 text-[#475569]">
+                  تم إنهاء هذه الاستشارة بنجاح.
+                  يمكنك الرجوع إلى المحادثة السابقة
+                  للاطلاع على تفاصيل التواصل.
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -721,6 +900,114 @@ export function ResearcherRequestDetails({
           </div>
         )}
       </div>
+
+      {/* نافذة تأكيد إنهاء الاستشارة */}
+      {showCompleteModal && (
+        <div
+          dir="rtl"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#071B2F]/60 p-4"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="complete-modal-title"
+            className="max-h-[90dvh] w-full max-w-[520px] overflow-y-auto rounded-[24px] bg-white p-6 shadow-2xl sm:p-8"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#E8F7EE] text-[#2E7D4F]">
+                <CheckCircle2 size={29} />
+              </div>
+
+              <button
+                type="button"
+                onClick={closeCompleteModal}
+                disabled={completing}
+                aria-label="إغلاق النافذة"
+                className="rounded-full p-2 text-[#64748B] transition hover:bg-[#F1F5F9] disabled:opacity-50"
+              >
+                <X size={21} />
+              </button>
+            </div>
+
+            <h2
+              id="complete-modal-title"
+              className="mt-5 text-xl font-semibold text-[#071B2F]"
+            >
+              تأكيد إنهاء الاستشارة
+            </h2>
+
+            <p className="mt-3 text-sm leading-8 text-[#64748B]">
+              هل أنت متأكد من الانتهاء من تقديم
+              الاستشارة البحثية للمستفيد؟
+            </p>
+
+            <div className="mt-5 rounded-2xl border border-[#D7E3EF] bg-[#F8FBFD] p-4">
+              <p className="text-xs text-[#64748B]">
+                عنوان الاستشارة
+              </p>
+
+              <p className="mt-2 break-words text-sm font-semibold text-[#071B2F]">
+                {requestData.title}
+              </p>
+            </div>
+
+            <div className="mt-4 flex items-start gap-3 rounded-2xl bg-[#FFF9EC] p-4">
+              <AlertTriangle
+                size={20}
+                className="mt-1 shrink-0 text-[#A16207]"
+              />
+
+              <p className="text-sm leading-7 text-[#785B29]">
+                بعد التأكيد، ستتغير حالة الطلب
+                إلى «مكتمل»، ولن يظهر زر إنهاء
+                الاستشارة مرة أخرى.
+              </p>
+            </div>
+
+            {completeError && (
+              <div
+                role="alert"
+                className="mt-4 rounded-xl border border-[#F1C7C7] bg-[#FFF5F5] p-4 text-sm leading-7 text-[#B42318]"
+              >
+                {completeError}
+              </div>
+            )}
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={closeCompleteModal}
+                disabled={completing}
+                className="inline-flex w-full items-center justify-center rounded-full border border-[#D7E3EF] px-6 py-3 text-sm font-medium text-[#475569] transition hover:bg-[#F8FBFD] disabled:opacity-50 sm:w-auto"
+              >
+                إلغاء
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  void completeConsultation()
+                }
+                disabled={completing}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#2E7D4F] px-6 py-3 text-sm font-medium text-white transition hover:bg-[#24643F] disabled:cursor-not-allowed disabled:opacity-50 sm:flex-1"
+              >
+                {completing ? (
+                  <Loader2
+                    size={18}
+                    className="animate-spin"
+                  />
+                ) : (
+                  <CheckCircle2 size={18} />
+                )}
+
+                {completing
+                  ? "جارٍ إنهاء الاستشارة..."
+                  : "تأكيد إنهاء الاستشارة"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
